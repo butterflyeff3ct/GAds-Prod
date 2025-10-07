@@ -68,8 +68,8 @@ def render_sidebar():
             st.rerun()
         
         st.markdown("---")
+        st.subheader("💬 AI Assistant")
         if st.secrets.get("dialogflow", {}).get("project_id"):
-            st.subheader("💬 AI Assistant")
             st.info("Chat assistant is active in the bottom-right corner.")
             try:
                 render_dialogflow_chat(
@@ -77,7 +77,10 @@ def render_sidebar():
                     agent_id=st.secrets.dialogflow.agent_id
                 )
             except Exception as e:
-                st.warning(f"Could not load chatbot: {e}")
+                st.warning(f"Could not load Dialogflow chatbot: {e}")
+                st.info("🤖 Using built-in assistant.")
+        else:
+            st.info("🤖 Built-in AI assistant is ready to help!")
                 
     return page
 
