@@ -7,7 +7,13 @@ from app.attribution_page import render_attribution_analysis
 from app.search_terms_page import render_search_terms_report
 from app.planner_page import render_keyword_planner
 from app.campaign_wizard import render_campaign_wizard
-from app.test_api_page import render_test_api_page
+try:
+    from app.test_api_page import render_test_api_page
+    TEST_API_AVAILABLE = True
+except ImportError:
+    TEST_API_AVAILABLE = False
+    def render_test_api_page():
+        st.error("Test API page is not available in this environment.")
 from services.google_ads_client import GOOGLE_ADS_API_AVAILABLE
 from app.auction_insights_page import render_auction_insights
 from app.chatbot import render_dialogflow_chat
