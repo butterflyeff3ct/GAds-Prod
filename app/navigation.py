@@ -17,6 +17,7 @@ except ImportError:
 from services.google_ads_client import GOOGLE_ADS_API_AVAILABLE
 from app.auction_insights_page import render_auction_insights
 from app.chatbot import render_dialogflow_chat
+from app.fallback_chatbot import render_fallback_chat
 
 def render_sidebar():
     """Renders the main sidebar navigation and settings."""
@@ -68,16 +69,21 @@ def render_sidebar():
             st.rerun()
         
         st.markdown("---")
+        # Always show AI Assistant - with Dialogflow if configured, otherwise with fallback
+        st.subheader("💬 AI Assistant")
         if st.secrets.get("dialogflow", {}).get("project_id"):
-            st.subheader("💬 AI Assistant")
-            st.info("Chat assistant is active in the bottom-right corner.")
+            st.info("🤖 Advanced Dialogflow assistant is active.")
             try:
                 render_dialogflow_chat(
                     project_id=st.secrets.dialogflow.project_id,
                     agent_id=st.secrets.dialogflow.agent_id
                 )
             except Exception as e:
-                st.warning(f"Could not load chatbot: {e}")
+                st.warning(f"Could not load Dialogflow chatbot: {e}")
+                render_fallback_chat()
+        else:
+            st.info("🤖 AI assistant is ready to help!")
+            render_fallback_chat()
                 
     return page
 

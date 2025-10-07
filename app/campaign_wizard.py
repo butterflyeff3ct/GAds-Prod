@@ -340,11 +340,11 @@ def render_campaign_wizard():
             
             campaign_types = [
                 ("Search", "🔍", "Generate leads on Google Search with text ads.", False),
-                ("Performance Max", "⚡", "Reach the right people across all of Google's channels.", True),
-                ("Demand Gen", "✨", "Generate demand and conversions on YouTube, Google Discover, and Gmail.", True),
-                ("Video", "📺", "Generate leads on YouTube with your video ads.", True),
-                ("Display", "🖼️", "Reach potential customers across the web with your creative.", True),
-                ("Shopping", "🛍️", "Promote your products from your online store on Google.", True)
+                ("Performance Max", "⚡", "Reach the right people across all of Google's channels.", False),
+                ("Demand Gen", "✨", "Generate demand and conversions on YouTube, Google Discover, and Gmail.", False),
+                ("Video", "📺", "Generate leads on YouTube with your video ads.", False),
+                ("Display", "🖼️", "Reach potential customers across the web with your creative.", False),
+                ("Shopping", "🛍️", "Promote your products from your online store on Google.", False)
             ]
             
             type_cols = st.columns(3)
