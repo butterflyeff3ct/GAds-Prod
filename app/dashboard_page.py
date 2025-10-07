@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes to reduce memory usage
 def render_dashboard():
     """Renders the main dashboard with Google Ads-style interface."""
     

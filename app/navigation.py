@@ -17,7 +17,7 @@ except ImportError:
 from services.google_ads_client import GOOGLE_ADS_API_AVAILABLE
 from app.auction_insights_page import render_auction_insights
 from app.chatbot import render_dialogflow_chat
-from app.floating_chatbot import render_floating_chatbot
+from app.simple_chatbot import render_simple_chatbot
 
 def render_sidebar():
     """Renders the main sidebar navigation and settings."""
