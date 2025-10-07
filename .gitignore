@@ -178,6 +178,18 @@ docs/build/
 *.backup
 *_backup.*
 
+# Version-specific files (will be handled separately)
+# Test version specific files
+TEST_README.md
+test_config.py
+run_test.py
+run_test.bat
+
+# Main version specific files  
+MAIN_README.md
+run_main.py
+run_main.bat
+
 # Cache directories
 .cache/
 cache/

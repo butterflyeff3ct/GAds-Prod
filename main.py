@@ -1,8 +1,20 @@
 # main.py
 import streamlit as st
+import os
 from app.state import initialize_session_state
 from app.navigation import render_sidebar, display_page
 import streamlit.components.v1 as components
+
+# Test mode detection
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
+if TEST_MODE:
+    try:
+        from test_config import get_test_config, get_test_port
+        test_config = get_test_config()
+        print(f"🧪 Running in TEST MODE - Port: {get_test_port()}")
+    except ImportError:
+        TEST_MODE = False
+        print("⚠️ Test config not found, running in normal mode")
 
 # Disable cache clearing popup and override functions
 def disabled_cache_clear(*args, **kwargs):
@@ -16,10 +28,17 @@ if hasattr(st, 'cache_resource'):
     st.cache_resource.clear = disabled_cache_clear
 
 # --- Page Configuration ---
+if TEST_MODE:
+    page_title = "Google Ads Simulator - TEST MODE"
+    page_icon = "🧪"
+else:
+    page_title = "Google Ads Simulator"
+    page_icon = "📊"
+
 st.set_page_config(
     layout="wide",
-    page_title="Google Ads Simulator",
-    page_icon="📊"
+    page_title=page_title,
+    page_icon=page_icon
 )
 
 components.html("""
@@ -75,6 +94,10 @@ if (window.streamlit) {
 def main():
     # Initialize session state on first run
     initialize_session_state()
+
+    # Show test mode indicator
+    if TEST_MODE:
+        st.warning("🧪 **TEST MODE ACTIVE** - This is a test version for development and educational purposes only.")
 
     # Render the sidebar and get the current page selection
     page = render_sidebar()
