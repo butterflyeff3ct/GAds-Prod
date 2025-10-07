@@ -165,7 +165,6 @@ credentials.json
 token.json
 
 # Test files
-test_*.py
 *_test.py
 tests/
 
