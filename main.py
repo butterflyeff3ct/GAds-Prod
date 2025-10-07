@@ -1,9 +1,24 @@
 # main.py
 import streamlit as st
 import os
-from app.state import initialize_session_state
-from app.navigation import render_sidebar, display_page
 import streamlit.components.v1 as components
+
+# Safe imports with fallbacks
+try:
+    from app.state import initialize_session_state
+except ImportError:
+    def initialize_session_state():
+        """Fallback initialization if state module fails"""
+        pass
+
+try:
+    from app.navigation import render_sidebar, display_page
+except ImportError as e:
+    st.error(f"Error importing navigation: {e}")
+    def render_sidebar():
+        return "Dashboard"
+    def display_page(page):
+        st.error(f"Page {page} not available")
 
 # Test mode detection
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
