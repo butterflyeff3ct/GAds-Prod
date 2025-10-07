@@ -17,7 +17,7 @@ except ImportError:
 from services.google_ads_client import GOOGLE_ADS_API_AVAILABLE
 from app.auction_insights_page import render_auction_insights
 from app.chatbot import render_dialogflow_chat
-from app.simple_chatbot import render_simple_chatbot
+from app.google_ads_assistant import render_google_ads_assistant
 
 def render_sidebar():
     """Renders the main sidebar navigation and settings."""
@@ -82,7 +82,7 @@ def render_sidebar():
                 st.warning(f"Could not load Dialogflow chatbot: {e}")
                 st.info("🤖 Using fallback AI assistant in bottom-right corner.")
         else:
-            st.info("🤖 AI assistant is ready to help! Look for the chat icon in the bottom-right corner.")
+            st.info("🤖 Google Ads Assistant is ready to help! Look for the assistant panel on the right side.")
                 
     return page
 
