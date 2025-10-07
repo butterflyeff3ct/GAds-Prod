@@ -104,6 +104,11 @@ def main():
 
     # Display the selected page
     display_page(page)
+    
+    # Render floating chatbot if Dialogflow not configured
+    if not st.secrets.get("dialogflow", {}).get("project_id"):
+        from app.floating_chatbot import render_floating_chatbot
+        render_floating_chatbot()
 
 if __name__ == "__main__":
     main()

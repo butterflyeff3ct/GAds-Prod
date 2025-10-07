@@ -17,7 +17,7 @@ except ImportError:
 from services.google_ads_client import GOOGLE_ADS_API_AVAILABLE
 from app.auction_insights_page import render_auction_insights
 from app.chatbot import render_dialogflow_chat
-from app.fallback_chatbot import render_fallback_chat
+from app.floating_chatbot import render_floating_chatbot
 
 def render_sidebar():
     """Renders the main sidebar navigation and settings."""
@@ -37,7 +37,7 @@ def render_sidebar():
 
         page = st.radio(
             "Navigation",
-            ["Dashboard", "Reports", "Attribution", "Search Terms", "Auction Insights", "Planner", "API Test"],
+            ["Dashboard", "Reports", "Attribution", "Search Terms", "Auction Insights", "Planner"],
             key="page_selection"
         )
         
@@ -69,10 +69,10 @@ def render_sidebar():
             st.rerun()
         
         st.markdown("---")
-        # Always show AI Assistant - with Dialogflow if configured, otherwise with fallback
+        # Always show AI Assistant - with Dialogflow if configured, otherwise with floating fallback
         st.subheader("💬 AI Assistant")
         if st.secrets.get("dialogflow", {}).get("project_id"):
-            st.info("🤖 Advanced Dialogflow assistant is active.")
+            st.info("🤖 Advanced Dialogflow assistant is active in the bottom-right corner.")
             try:
                 render_dialogflow_chat(
                     project_id=st.secrets.dialogflow.project_id,
@@ -80,10 +80,9 @@ def render_sidebar():
                 )
             except Exception as e:
                 st.warning(f"Could not load Dialogflow chatbot: {e}")
-                render_fallback_chat()
+                st.info("🤖 Using fallback AI assistant in bottom-right corner.")
         else:
-            st.info("🤖 AI assistant is ready to help!")
-            render_fallback_chat()
+            st.info("🤖 AI assistant is ready to help! Look for the chat icon in the bottom-right corner.")
                 
     return page
 
@@ -108,7 +107,6 @@ def display_page(page: str):
         "Search Terms": render_search_terms_report,
         "Auction Insights": render_auction_insights,
         "Planner": render_keyword_planner,
-        "API Test": render_test_api_page,
     }
     # Get the function from the map and call it
     render_func = page_map.get(page)
