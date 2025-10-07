@@ -4,7 +4,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 
-@st.cache_data(ttl=300)  # Cache for 5 minutes to reduce memory usage
 def render_dashboard():
     """Renders the main dashboard with Google Ads-style interface."""
     
@@ -141,92 +140,10 @@ def render_dashboard():
     col1, col2, col3 = st.columns([1, 1, 8])
     with col1:
         if st.button("📊 Metrics", use_container_width=True):
-            st.session_state.show_metrics_panel = not st.session_state.get('show_metrics_panel', False)
+            st.info("Metrics panel - Coming soon")
     with col2:
         if st.button("⚙️ Adjust", use_container_width=True):
-            st.session_state.show_adjust_panel = not st.session_state.get('show_adjust_panel', False)
-    
-    # Metrics Panel
-    if st.session_state.get('show_metrics_panel', False):
-        st.markdown("---")
-        st.subheader("📊 Customize Metrics Display")
-        
-        available_metrics = [
-            'Clicks', 'Impressions', 'Avg. CPC', 'Cost', 'Conversions', 
-            'Conv. rate', 'CTR', 'Avg. position', 'Quality Score', 'Search Impression Share'
-        ]
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write("**Available Metrics:**")
-            for metric in available_metrics:
-                if metric not in st.session_state.dashboard_metrics:
-                    if st.button(f"+ {metric}", key=f"add_{metric}"):
-                        st.session_state.dashboard_metrics.append(metric)
-                        st.rerun()
-        
-        with col2:
-            st.write("**Selected Metrics:**")
-            metrics_to_remove = []
-            for i, metric in enumerate(st.session_state.dashboard_metrics):
-                col_a, col_b = st.columns([3, 1])
-                with col_a:
-                    st.write(f"• {metric}")
-                with col_b:
-                    if st.button("×", key=f"remove_{metric}"):
-                        metrics_to_remove.append(metric)
-            
-            for metric in metrics_to_remove:
-                st.session_state.dashboard_metrics.remove(metric)
-                st.rerun()
-        
-        if st.button("Reset to Default", key="reset_metrics"):
-            st.session_state.dashboard_metrics = ['Clicks', 'Impressions', 'Avg. CPC', 'Cost']
-            st.rerun()
-    
-    # Adjust Settings Panel
-    if st.session_state.get('show_adjust_panel', False):
-        st.markdown("---")
-        st.subheader("⚙️ Simulation Settings")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Chart Settings:**")
-            chart_type = st.selectbox(
-                "Chart Type",
-                ["Line Chart", "Bar Chart", "Area Chart"],
-                key="dashboard_chart_type"
-            )
-            
-            show_forecast = st.checkbox("Show Forecast", value=False, key="show_forecast")
-            
-            if show_forecast:
-                forecast_days = st.slider("Forecast Days", 1, 30, 7, key="forecast_days")
-        
-        with col2:
-            st.write("**Display Options:**")
-            show_trend_lines = st.checkbox("Show Trend Lines", value=True, key="show_trends")
-            show_annotations = st.checkbox("Show Data Annotations", value=False, key="show_annotations")
-            auto_refresh = st.checkbox("Auto Refresh", value=False, key="auto_refresh")
-            
-            if auto_refresh:
-                refresh_interval = st.slider("Refresh Interval (seconds)", 5, 300, 30, key="refresh_interval")
-        
-        st.write("**Filter Settings:**")
-        filter_col1, filter_col2 = st.columns(2)
-        
-        with filter_col1:
-            min_clicks = st.number_input("Minimum Clicks", 0, 1000, 0, key="min_clicks")
-            min_impressions = st.number_input("Minimum Impressions", 0, 10000, 0, key="min_impressions")
-        
-        with filter_col2:
-            max_cpc = st.number_input("Maximum CPC", 0.0, 100.0, 100.0, step=0.1, key="max_cpc")
-            min_ctr = st.number_input("Minimum CTR (%)", 0.0, 100.0, 0.0, step=0.1, key="min_ctr")
-        
-        if st.button("Apply Settings", key="apply_settings"):
-            st.success("✅ Settings applied! Refresh the dashboard to see changes.")
-            st.rerun()
+            st.info("Adjust settings - Coming soon")
 
     # ========== MULTI-LINE PERFORMANCE CHART ==========
     st.subheader("Performance Over Time")

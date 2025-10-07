@@ -8,17 +8,6 @@ from typing import Optional, Dict, Any
 def test_google_ads_api():
     """Test Google Ads API connection and display results."""
     st.title("🔧 Google Ads API Test")
-    
-    # Check if Google Ads libraries are available
-    try:
-        from google.ads.googleads.client import GoogleAdsClient
-        from google.ads.googleads.errors import GoogleAdsException
-        GOOGLE_ADS_LIBS_AVAILABLE = True
-    except ImportError:
-        GOOGLE_ADS_LIBS_AVAILABLE = False
-        st.warning("⚠️ Google Ads API libraries not installed. This is normal for demo mode.")
-        st.info("💡 The app will use mock data instead of real API calls.")
-        return
     st.markdown("Test your Google Ads API connection and credentials.")
     
     # Test status tracking
@@ -59,23 +48,25 @@ def test_google_ads_api():
             test_results['config'] = False
             return False
     
-    # Test 2: Google Ads imports (already checked above)
+    # Test 2: Google Ads imports
     st.subheader("📦 Library Import Test")
-    if GOOGLE_ADS_LIBS_AVAILABLE:
-        st.success("✅ Google Ads API libraries imported successfully")
-        test_results['imports'] = True
-    else:
-        st.warning("⚠️ Google Ads API libraries not available")
-        test_results['imports'] = False
-        return
+    with st.spinner("Testing Google Ads API imports..."):
+        try:
+            from google.ads.googleads.client import GoogleAdsClient
+            from google.ads.googleads.errors import GoogleAdsException
+            st.success("✅ Google Ads API libraries imported successfully")
+            test_results['imports'] = True
+        except ImportError as e:
+            st.error(f"❌ Google Ads API libraries not installed: {e}")
+            st.info("💡 Install with: `pip install google-ads`")
+            test_results['imports'] = False
+            return False
     
     # Test 3: Authentication
     st.subheader("🔐 Authentication Test")
     with st.spinner("Testing Google Ads API authentication..."):
-        if not GOOGLE_ADS_LIBS_AVAILABLE:
-            st.warning("⚠️ Cannot test authentication - Google Ads libraries not available")
-            return
         try:
+            from google.ads.googleads.client import GoogleAdsClient
             from google.ads.googleads.errors import GoogleAdsException
             
             client = GoogleAdsClient.load_from_dict(google_ads_config)

@@ -104,11 +104,6 @@ def main():
 
     # Display the selected page
     display_page(page)
-    
-    # Render Google Ads Assistant if Dialogflow not configured
-    if not st.secrets.get("dialogflow", {}).get("project_id"):
-        from app.google_ads_assistant import render_google_ads_assistant
-        render_google_ads_assistant()
 
 if __name__ == "__main__":
     main()
