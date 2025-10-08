@@ -16,7 +16,7 @@ import streamlit.components.v1 as components
  #   Set: AUTHENTICATION_ENABLED = False
  # ============================================================================
  
- AUTHENTICATION_ENABLED = True  # ← CHANGE THIS TO False TO DISABLE AUTH (for testing)
+AUTHENTICATION_ENABLED = True  # ← CHANGE THIS TO False TO DISABLE AUTH (for testing)
  
  # ============================================================================
  
