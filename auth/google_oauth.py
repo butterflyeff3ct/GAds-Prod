@@ -46,7 +46,18 @@ class GoogleOAuthManager:
         if not self.oauth_config:
             # Fallback: try to load from Streamlit secrets
             try:
-                self.oauth_config = st.secrets.get("google_oauth", {})
+                secrets = st.secrets
+                if hasattr(secrets, 'get') and secrets.get("google_oauth"):
+                    self.oauth_config = secrets["google_oauth"]
+                elif hasattr(secrets, 'google_oauth'):
+                    self.oauth_config = secrets.google_oauth
+                else:
+                    # Try alternative access methods
+                    try:
+                        self.oauth_config = dict(st.secrets["google_oauth"])
+                    except:
+                        self.oauth_config = None
+                
                 if not self.oauth_config:
                     st.warning("⚠️ OAuth configuration not found. Authentication will be disabled.")
                     self.oauth_config = None
@@ -66,12 +77,26 @@ class GoogleOAuthManager:
     
     def is_configured(self) -> bool:
         """Check if OAuth is properly configured."""
-        return (
-            self.oauth_config is not None and
-            self.oauth_config.get('client_id') and
-            self.oauth_config.get('client_secret') and
-            self.oauth_config.get('redirect_uri')
-        )
+        if self.oauth_config is None:
+            return False
+        
+        required_fields = ['client_id', 'client_secret', 'redirect_uri']
+        for field in required_fields:
+            if not self.oauth_config.get(field):
+                return False
+        
+        return True
+    
+    def get_debug_info(self) -> dict:
+        """Get debug information about OAuth configuration."""
+        return {
+            'has_config': self.oauth_config is not None,
+            'config_keys': list(self.oauth_config.keys()) if self.oauth_config else [],
+            'client_id_present': bool(self.oauth_config.get('client_id')) if self.oauth_config else False,
+            'client_secret_present': bool(self.oauth_config.get('client_secret')) if self.oauth_config else False,
+            'redirect_uri_present': bool(self.oauth_config.get('redirect_uri')) if self.oauth_config else False,
+            'is_configured': self.is_configured()
+        }
     
     def get_authorization_url(self) -> str:
         """
