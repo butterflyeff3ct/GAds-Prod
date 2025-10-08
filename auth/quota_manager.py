@@ -26,7 +26,7 @@ class QuotaManager:
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
                 self.quota_limits = config.get('quota_limits', {})
-        except:
+        except Exception as e:
             # Default limits if config not found
             self.quota_limits = {
                 'google_ads_api': 10,

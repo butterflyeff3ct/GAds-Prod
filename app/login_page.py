@@ -87,6 +87,11 @@ def render_login_page():
     else:
         # Google Sign-In button
         if st.button("🔐 Sign in with Google", type="primary", use_container_width=True):
+            # Check if OAuth is configured
+            if not oauth_manager.is_configured():
+                st.error("🔧 OAuth not configured. Please contact administrator.")
+                return
+                
             # Get authorization URL
             auth_url = oauth_manager.get_authorization_url()
             

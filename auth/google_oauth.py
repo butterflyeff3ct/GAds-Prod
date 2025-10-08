@@ -26,22 +26,50 @@ class GoogleOAuthManager:
             import os
             if os.path.exists("config/oauth_config_local.yaml"):
                 config_path = "config/oauth_config_local.yaml"
-            else:
+            elif os.path.exists("config/oauth_config.yaml"):
                 config_path = "config/oauth_config.yaml"
+            elif os.path.exists("config/oauth_config_template.yaml"):
+                config_path = "config/oauth_config_template.yaml"
+            else:
+                config_path = None
         """Initialize OAuth manager with configuration."""
-        try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-                self.oauth_config = config['google_oauth']
-        except Exception as e:
-            st.error(f"Failed to load OAuth config: {e}")
-            self.oauth_config = None
+        if config_path:
+            try:
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                    self.oauth_config = config['google_oauth']
+            except Exception as e:
+                self.oauth_config = None
+        
+        if not self.oauth_config:
+            # Fallback: try to load from Streamlit secrets
+            try:
+                self.oauth_config = st.secrets.get("google_oauth", {})
+                if not self.oauth_config:
+                    st.warning("⚠️ OAuth configuration not found. Authentication will be disabled.")
+                    self.oauth_config = None
+            except Exception as secrets_error:
+                st.warning("⚠️ OAuth configuration not available. Authentication will be disabled.")
+                self.oauth_config = None
         
         self.scopes = self.oauth_config.get('scopes', [
             'openid',
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile'
-        ])
+        ]) if self.oauth_config else [
+            'openid',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile'
+        ]
+    
+    def is_configured(self) -> bool:
+        """Check if OAuth is properly configured."""
+        return (
+            self.oauth_config is not None and
+            self.oauth_config.get('client_id') and
+            self.oauth_config.get('client_secret') and
+            self.oauth_config.get('redirect_uri')
+        )
     
     def get_authorization_url(self) -> str:
         """
@@ -50,7 +78,7 @@ class GoogleOAuthManager:
         Returns:
             Authorization URL for user to visit
         """
-        if not self.oauth_config:
+        if not self.is_configured():
             return None
         
         # Create flow

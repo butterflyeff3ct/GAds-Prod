@@ -152,15 +152,20 @@ def main():
                 if st.button("🔐 **Sign in with Google**", type="primary", use_container_width=True):
                     if AUTH_AVAILABLE:
                         oauth_manager = GoogleOAuthManager()
-                        auth_url = oauth_manager.get_authorization_url()
-                        if auth_url:
-                            st.markdown(f'<a href="{auth_url}" target="_blank" style="display:none" id="main_oauth_link"></a>', unsafe_allow_html=True)
-                            st.markdown("""
-                            <script>
-                                document.getElementById('main_oauth_link').click();
-                            </script>
-                            """, unsafe_allow_html=True)
-                            st.success("🔗 Opening Google login in new tab...")
+                        if oauth_manager.is_configured():
+                            auth_url = oauth_manager.get_authorization_url()
+                            if auth_url:
+                                st.markdown(f'<a href="{auth_url}" target="_blank" style="display:none" id="main_oauth_link"></a>', unsafe_allow_html=True)
+                                st.markdown("""
+                                <script>
+                                    document.getElementById('main_oauth_link').click();
+                                </script>
+                                """, unsafe_allow_html=True)
+                                st.success("🔗 Opening Google login in new tab...")
+                        else:
+                            st.error("🔧 OAuth not configured. Please contact administrator.")
+                    else:
+                        st.error("🔧 Authentication system not available.")
             
             # Simple instructions
             st.markdown("""
