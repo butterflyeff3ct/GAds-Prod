@@ -18,7 +18,6 @@ from services.google_ads_client import GOOGLE_ADS_API_AVAILABLE
 from app.auction_insights_page import render_auction_insights
 from app.chatbot import render_dialogflow_chat
 from app.quota_page import render_quota_dashboard
-from app.debug_page import render_debug_page
 
 def render_sidebar():
     """Renders the main sidebar navigation and settings."""
@@ -38,7 +37,7 @@ def render_sidebar():
 
         page = st.radio(
             "Navigation",
-            ["Dashboard", "Reports", "Attribution", "Search Terms", "Auction Insights", "Planner", "Quotas", "Debug"],
+            ["Dashboard", "Reports", "Attribution", "Search Terms", "Auction Insights", "Planner", "Quotas"],
             key="page_selection"
         )
         
@@ -105,7 +104,6 @@ def display_page(page: str):
         "Auction Insights": render_auction_insights,
         "Planner": render_keyword_planner,
         "Quotas": render_quota_dashboard,
-        "Debug": render_debug_page,
     }
     # Get the function from the map and call it
     render_func = page_map.get(page)
