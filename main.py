@@ -15,7 +15,7 @@ from app.navigation import render_sidebar, display_page
 # Set AUTHENTICATION_ENABLED = False
 # ======================================================================
 
-AUTHENTICATION_ENABLED = True  # ← Set to False for testing
+AUTHENTICATION_ENABLED = False  # ← Set to False for testing
 
 # === AUTHENTICATION MODULE IMPORTS ====================================
 if AUTHENTICATION_ENABLED:
