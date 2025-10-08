@@ -33,6 +33,8 @@ class GoogleOAuthManager:
             else:
                 config_path = None
         """Initialize OAuth manager with configuration."""
+        self.oauth_config = None
+        
         if config_path:
             try:
                 with open(config_path, 'r') as f:
