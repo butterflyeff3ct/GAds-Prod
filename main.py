@@ -74,36 +74,60 @@ def handle_oauth_callback():
     
     query_params = st.query_params
     
+    # Check for OAuth callback
     if 'code' in query_params:
         with st.spinner("🔐 Authenticating..."):
             try:
                 oauth_manager = GoogleOAuthManager()
+                if not oauth_manager.is_configured():
+                    st.error("❌ OAuth not configured")
+                    st.query_params.clear()
+                    return
+                
                 code = query_params['code']
                 authorization_response = f"{oauth_manager.oauth_config['redirect_uri']}?code={code}"
                 
                 user_info = oauth_manager.handle_callback(authorization_response)
                 
                 if user_info:
+                    # Create or update user in database
                     db_manager = get_database_manager()
                     user = db_manager.create_or_update_user(user_info)
                     
+                    # Create session
                     session_id = SessionManager.create_session(user_info)
                     expires_at = datetime.now() + timedelta(hours=2)
                     db_manager.create_session(user_info['email'], session_id, expires_at)
                     
+                    # Log activity
                     UserActivityLogger.log_activity(user_info['email'], 'login')
                     db_manager.log_activity(user_info['email'], 'login', {'method': 'google_oauth'})
                     
+                    # Clear query params and show success
                     st.query_params.clear()
                     st.success(f"✅ Welcome, {user_info['name']}!")
                     st.balloons()
+                    
+                    # Small delay before rerun to ensure user sees success message
+                    import time
+                    time.sleep(1)
                     st.rerun()
                 else:
-                    st.error("❌ Authentication failed")
+                    st.error("❌ Authentication failed. Please try again.")
                     st.query_params.clear()
+                    
             except Exception as e:
-                st.error(f"Authentication error: {e}")
+                st.error(f"❌ Authentication error: {str(e)}")
                 st.query_params.clear()
+                
+    # Check for OAuth error
+    elif 'error' in query_params:
+        error = query_params.get('error', 'Unknown error')
+        error_description = query_params.get('error_description', '')
+        st.error(f"❌ OAuth Error: {error}")
+        if error_description:
+            st.error(f"Details: {error_description}")
+        st.query_params.clear()
 
 def render_quota_in_sidebar():
     """Render quota indicator."""
@@ -155,13 +179,14 @@ def main():
                         if oauth_manager.is_configured():
                             auth_url = oauth_manager.get_authorization_url()
                             if auth_url:
-                                st.markdown(f'<a href="{auth_url}" target="_blank" style="display:none" id="main_oauth_link"></a>', unsafe_allow_html=True)
+                                # Open in same tab instead of new tab for better callback handling
+                                st.markdown(f'<a href="{auth_url}" style="display:none" id="main_oauth_link"></a>', unsafe_allow_html=True)
                                 st.markdown("""
                                 <script>
                                     document.getElementById('main_oauth_link').click();
                                 </script>
                                 """, unsafe_allow_html=True)
-                                st.success("🔗 Opening Google login in new tab...")
+                                st.info("🔄 Redirecting to Google login...")
                         else:
                             st.error("🔧 OAuth not configured. Please contact administrator.")
                     else:
@@ -171,9 +196,9 @@ def main():
             st.markdown("""
             **📋 Steps:**
             1. Click "Sign in with Google" above
-            2. Sign in with your Google account  
+            2. Sign in with your Google account
             3. Grant permissions
-            4. Return to this tab - you'll be logged in automatically
+            4. You'll be redirected back and logged in automatically
             """)
             
             return
