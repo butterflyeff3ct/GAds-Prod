@@ -16,15 +16,68 @@ class GoogleAuthManager:
             self.client_id = auth_config["client_id"]
             self.client_secret = auth_config["client_secret"]
             self.redirect_uri = auth_config["redirect_uri"]
+            
+            # Check if placeholder values are still being used
+            if (self.client_id == "YOUR_CLIENT_ID_HERE" or 
+                self.client_secret == "YOUR_CLIENT_SECRET_HERE"):
+                st.error("🔧 **OAuth Configuration Required**")
+                st.error("❌ Please replace placeholder values with your actual OAuth credentials")
+                st.markdown("---")
+                st.markdown("### 📋 **Setup Instructions:**")
+                st.markdown("""
+                1. **Create Google OAuth Client:**
+                   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+                   - Navigate to "APIs & Services" > "Credentials"
+                   - Click "Create Credentials" > "OAuth client ID"
+                   - Choose "Web application"
+                   - Set authorized redirect URIs: `http://localhost:8501/`
+
+                2. **Update Configuration:**
+                   - Edit `.streamlit/secrets.toml`
+                   - Replace the placeholder values with your actual credentials:
+                   ```toml
+                   [google_oauth]
+                   client_id = "your-actual-client-id"
+                   client_secret = "your-actual-client-secret"
+                   redirect_uri = "http://localhost:8501/"
+                   ```
+
+                3. **Restart the Application:**
+                   - Stop the current app (Ctrl+C)
+                   - Run `streamlit run main.py` again
+                """)
+                st.stop()
+            
             self.oauth_enabled = True
         except Exception as e:
-            st.warning(f"⚠️ OAuth configuration not found: {e}")
-            st.info("🔄 Running in demo mode without authentication")
-            self.oauth_enabled = False
-            # Set dummy values to prevent errors
-            self.client_id = None
-            self.client_secret = None
-            self.redirect_uri = None
+            # OAuth not configured - show configuration error
+            st.error("🔧 **OAuth Configuration Required**")
+            st.error(f"❌ Error loading OAuth configuration: {e}")
+            st.markdown("---")
+            st.markdown("### 📋 **Setup Instructions:**")
+            st.markdown("""
+            1. **Create Google OAuth Client:**
+               - Go to [Google Cloud Console](https://console.cloud.google.com/)
+               - Navigate to "APIs & Services" > "Credentials"
+               - Click "Create Credentials" > "OAuth client ID"
+               - Choose "Web application"
+               - Set authorized redirect URIs: `http://localhost:8501/`
+
+            2. **Update Configuration:**
+               - Edit `.streamlit/secrets.toml`
+               - Add your OAuth credentials:
+               ```toml
+               [google_oauth]
+               client_id = "YOUR_CLIENT_ID"
+               client_secret = "YOUR_CLIENT_SECRET"
+               redirect_uri = "http://localhost:8501/"
+               ```
+
+            3. **Restart the Application:**
+               - Stop the current app (Ctrl+C)
+               - Run `streamlit run main.py` again
+            """)
+            st.stop()
         
         # Google OAuth endpoints
         self.auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -117,20 +170,10 @@ class GoogleAuthManager:
     
     def is_authenticated(self) -> bool:
         """Check if user is authenticated"""
-        if not self.oauth_enabled:
-            # In demo mode, always return True (no auth required)
-            return True
         return st.session_state.user is not None
     
     def get_user(self) -> Optional[Dict[str, Any]]:
         """Get current authenticated user"""
-        if not self.oauth_enabled:
-            # In demo mode, return a demo user
-            return {
-                "name": "Demo User",
-                "email": "demo@example.com",
-                "picture": None
-            }
         return st.session_state.user
     
     def logout(self):
@@ -143,21 +186,6 @@ class GoogleAuthManager:
     
     def show_login_screen(self):
         """Display login screen"""
-        if not self.oauth_enabled:
-            st.markdown("## 🎯 Google Ads Campaign Simulator")
-            st.markdown("### Demo Mode - No Authentication Required")
-            st.write("")
-            
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                if st.button("🚀 Continue to App", type="primary", use_container_width=True):
-                    st.rerun()
-            
-            st.markdown("---")
-            st.info("💡 Running in demo mode. OAuth authentication is disabled.")
-            st.info("🔧 To enable OAuth, create a new Google OAuth client and update secrets.toml")
-            return
-        
         st.markdown("## 🔐 Google Ads Campaign Simulator")
         st.markdown("### Please log in to continue")
         st.write("")
@@ -193,22 +221,18 @@ class GoogleAuthManager:
                     if user.get('picture'):
                         st.image(user['picture'], width=50)
                     else:
-                        # Show a placeholder avatar for demo mode
+                        # Show a placeholder avatar
                         st.markdown("👤")
                 with col2:
                     st.write(f"**{user.get('name')}**")
                     st.caption(user.get('email'))
                 
-                # Only show logout button if OAuth is enabled
-                if self.oauth_enabled and st.button("🚪 Logout", use_container_width=True):
+                if st.button("🚪 Logout", use_container_width=True):
                     self.logout()
-                elif not self.oauth_enabled:
-                    st.caption("🔓 Demo Mode")
         else:
             col1, col2, col3 = st.columns([1, 3, 1])
             with col2:
-                mode_indicator = " (Demo)" if not self.oauth_enabled else ""
-                st.info(f"👤 Logged in as: **{user.get('name')}**{mode_indicator} ({user.get('email')})")
+                st.info(f"👤 Logged in as: **{user.get('name')}** ({user.get('email')})")
 
 
 def require_auth(func):
