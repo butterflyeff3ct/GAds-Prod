@@ -42,13 +42,15 @@ class GoogleAuthManager:
             # Add manual override buttons for debugging
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("🔄 Force Localhost URI"):
+                if st.button("🔄 Force Localhost URI", key="force_localhost_uri"):
                     self.redirect_uri = "http://localhost:8501/"
                     st.caption("✅ Forced to use localhost URI")
+                    st.rerun()
             with col2:
-                if st.button("🌐 Force Deployed URI"):
+                if st.button("🌐 Force Deployed URI", key="force_deployed_uri"):
                     self.redirect_uri = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
                     st.caption("✅ Forced to use deployed URI")
+                    st.rerun()
             
             # Check if placeholder values are still being used
             if (self.client_id == "YOUR_CLIENT_ID_HERE" or 
@@ -164,52 +166,36 @@ class GoogleAuthManager:
         server_port = os.getenv("STREAMLIT_SERVER_PORT", "")
         server_address = os.getenv("STREAMLIT_SERVER_ADDRESS", "")
         
-        # More comprehensive localhost detection
-        is_localhost = (
-            server_port == "8501" or 
-            server_port == "8502" or
-            server_port == "8503" or
-            server_address == "localhost" or
-            server_address == "127.0.0.1" or
-            server_address == "0.0.0.0" or
-            "localhost" in str(server_address) or
-            "127.0.0.1" in str(server_address) or
-            # Check if we're not on Streamlit Cloud
-            not os.getenv("STREAMLIT_CLOUD") and
-            not os.getenv("STREAMLIT_CLOUD_DOMAIN") and
-            not os.getenv("STREAMLIT_SHARING_MODE") and
-            "streamlit.app" not in str(os.getenv("HOSTNAME", ""))
+        # Simple approach: Check if we're clearly on Streamlit Cloud
+        is_streamlit_cloud = (
+            os.getenv("STREAMLIT_CLOUD") == "true" or
+            os.getenv("STREAMLIT_CLOUD_DOMAIN") or
+            os.getenv("STREAMLIT_SHARING_MODE") == "true" or
+            "streamlit.app" in str(os.getenv("HOSTNAME", "")) or
+            "/app" in str(os.getenv("PWD", ""))
         )
         
-        if is_localhost:
-            # Running locally - use localhost URI
-            local_uri = auth_config.get("redirect_uri_local", "http://localhost:8501/")
-            return local_uri
-        else:
-            # Running on Streamlit Cloud or any other environment - use deployed URI
+        if is_streamlit_cloud:
+            # Running on Streamlit Cloud - use deployed URI
             deployed_uri = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
             return deployed_uri
+        else:
+            # Running locally or any other environment - use localhost URI
+            local_uri = auth_config.get("redirect_uri_local", "http://localhost:8501/")
+            return local_uri
     
     def _is_running_locally(self):
         """Helper method to check if running locally"""
-        server_port = os.getenv("STREAMLIT_SERVER_PORT", "")
-        server_address = os.getenv("STREAMLIT_SERVER_ADDRESS", "")
-        
-        return (
-            server_port == "8501" or 
-            server_port == "8502" or
-            server_port == "8503" or
-            server_address == "localhost" or
-            server_address == "127.0.0.1" or
-            server_address == "0.0.0.0" or
-            "localhost" in str(server_address) or
-            "127.0.0.1" in str(server_address) or
-            # Check if we're not on Streamlit Cloud
-            (not os.getenv("STREAMLIT_CLOUD") and
-             not os.getenv("STREAMLIT_CLOUD_DOMAIN") and
-             not os.getenv("STREAMLIT_SHARING_MODE") and
-             "streamlit.app" not in str(os.getenv("HOSTNAME", "")))
+        # Simple approach: Check if we're NOT on Streamlit Cloud
+        is_streamlit_cloud = (
+            os.getenv("STREAMLIT_CLOUD") == "true" or
+            os.getenv("STREAMLIT_CLOUD_DOMAIN") or
+            os.getenv("STREAMLIT_SHARING_MODE") == "true" or
+            "streamlit.app" in str(os.getenv("HOSTNAME", "")) or
+            "/app" in str(os.getenv("PWD", ""))
         )
+        
+        return not is_streamlit_cloud
     
     def _init_session_state(self):
         """Initialize authentication session state"""
