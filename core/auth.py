@@ -29,11 +29,12 @@ class GoogleAuthManager:
             debug_info.append(f"  STREAMLIT_SERVER_PORT: {os.getenv('STREAMLIT_SERVER_PORT')}")
             debug_info.append(f"  STREAMLIT_SERVER_ADDRESS: {os.getenv('STREAMLIT_SERVER_ADDRESS')}")
             debug_info.append(f"  STREAMLIT_SHARING_MODE: {os.getenv('STREAMLIT_SHARING_MODE')}")
+            debug_info.append(f"  HOSTNAME: {os.getenv('HOSTNAME')}")
+            debug_info.append(f"  PWD: {os.getenv('PWD')}")
             
-            # Only show debug info in development or if there's an issue
-            if not os.getenv("STREAMLIT_CLOUD") or "streamlit.app" not in self.redirect_uri:
-                for info in debug_info:
-                    st.caption(info)
+            # Always show debug info for now to troubleshoot
+            for info in debug_info:
+                st.caption(info)
             
             # Check if placeholder values are still being used
             if (self.client_id == "YOUR_CLIENT_ID_HERE" or 
@@ -115,14 +116,26 @@ class GoogleAuthManager:
         """Dynamically determine the correct redirect URI based on environment"""
         import os
         
-        # Simple approach: Check if we're running on Streamlit Cloud
-        # Streamlit Cloud sets these environment variables
+        # Get all environment variables for debugging
+        env_vars = {
+            "STREAMLIT_CLOUD": os.getenv("STREAMLIT_CLOUD"),
+            "STREAMLIT_CLOUD_DOMAIN": os.getenv("STREAMLIT_CLOUD_DOMAIN"),
+            "STREAMLIT_SHARING_MODE": os.getenv("STREAMLIT_SHARING_MODE"),
+            "STREAMLIT_SERVER_PORT": os.getenv("STREAMLIT_SERVER_PORT"),
+            "STREAMLIT_SERVER_ADDRESS": os.getenv("STREAMLIT_SERVER_ADDRESS"),
+            "HOSTNAME": os.getenv("HOSTNAME"),
+            "PWD": os.getenv("PWD"),
+        }
+        
+        # Multiple detection methods for Streamlit Cloud
         is_streamlit_cloud = (
             os.getenv("STREAMLIT_CLOUD") == "true" or
             os.getenv("STREAMLIT_CLOUD_DOMAIN") or
             os.getenv("STREAMLIT_SHARING_MODE") == "true" or
             "streamlit.app" in str(os.getenv("STREAMLIT_SERVER_PORT", "")) or
-            "streamlit.app" in str(os.getenv("STREAMLIT_SERVER_ADDRESS", ""))
+            "streamlit.app" in str(os.getenv("STREAMLIT_SERVER_ADDRESS", "")) or
+            "streamlit.app" in str(os.getenv("HOSTNAME", "")) or
+            "/app" in str(os.getenv("PWD", ""))  # Streamlit Cloud apps run in /app directory
         )
         
         # Additional check: if we're not running on localhost, assume Streamlit Cloud
@@ -133,10 +146,17 @@ class GoogleAuthManager:
         except:
             pass
         
-        # Force deployed URI if we detect Streamlit Cloud
-        if is_streamlit_cloud:
+        # Force deployed URI if we detect Streamlit Cloud OR if we're not on localhost
+        # Also check if we're not running on the default Streamlit port
+        server_port = os.getenv("STREAMLIT_SERVER_PORT", "")
+        is_localhost = (
+            server_port.endswith("8501") and 
+            "localhost" in str(os.getenv("STREAMLIT_SERVER_ADDRESS", ""))
+        )
+        
+        if is_streamlit_cloud or not is_localhost:
             # Running on Streamlit Cloud - use deployed URI
-            deployed_uri = auth_config.get("redirect_uri_deployed", "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/")
+            deployed_uri = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
             return deployed_uri
         else:
             # Running locally - use localhost URI
