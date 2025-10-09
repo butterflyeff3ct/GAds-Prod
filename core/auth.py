@@ -31,26 +31,9 @@ class GoogleAuthManager:
             debug_info.append(f"  HOSTNAME: {os.getenv('HOSTNAME')}")
             debug_info.append(f"  PWD: {os.getenv('PWD')}")
             
-            # Manual override option for debugging
-            debug_info.append("---")
-            debug_info.append("🔧 Manual Override (for debugging):")
-            
-            # Always show debug info for now to troubleshoot
+            # Show debug info for troubleshooting
             for info in debug_info:
                 st.caption(info)
-            
-            # Add manual override buttons for debugging
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 Force Localhost URI", key="force_localhost_uri"):
-                    self.redirect_uri = "http://localhost:8501/"
-                    st.caption("✅ Forced to use localhost URI")
-                    st.rerun()
-            with col2:
-                if st.button("🌐 Force Deployed URI", key="force_deployed_uri"):
-                    self.redirect_uri = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
-                    st.caption("✅ Forced to use deployed URI")
-                    st.rerun()
             
             # Check if placeholder values are still being used
             if (self.client_id == "YOUR_CLIENT_ID_HERE" or 
