@@ -149,36 +149,36 @@ class GoogleAuthManager:
         server_port = os.getenv("STREAMLIT_SERVER_PORT", "")
         server_address = os.getenv("STREAMLIT_SERVER_ADDRESS", "")
         
-        # Simple approach: Check if we're clearly on Streamlit Cloud
-        is_streamlit_cloud = (
-            os.getenv("STREAMLIT_CLOUD") == "true" or
-            os.getenv("STREAMLIT_CLOUD_DOMAIN") or
-            os.getenv("STREAMLIT_SHARING_MODE") == "true" or
-            "streamlit.app" in str(os.getenv("HOSTNAME", "")) or
-            "/app" in str(os.getenv("PWD", ""))
+        # Explicit localhost detection first
+        is_localhost = (
+            server_port == "8501" or
+            server_address == "localhost" or 
+            server_address == "127.0.0.1" or
+            "localhost" in str(server_address) or
+            "127.0.0.1" in str(server_address)
         )
         
-        if is_streamlit_cloud:
-            # Running on Streamlit Cloud - use deployed URI
-            deployed_uri = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
-            return deployed_uri
-        else:
-            # Running locally or any other environment - use localhost URI
+        if is_localhost:
+            # Running locally - use localhost URI
             local_uri = auth_config.get("redirect_uri_local", "http://localhost:8501/")
             return local_uri
+        else:
+            # Running on Streamlit Cloud or any other environment - use deployed URI
+            deployed_uri = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
+            return deployed_uri
     
     def _is_running_locally(self):
         """Helper method to check if running locally"""
-        # Simple approach: Check if we're NOT on Streamlit Cloud
-        is_streamlit_cloud = (
-            os.getenv("STREAMLIT_CLOUD") == "true" or
-            os.getenv("STREAMLIT_CLOUD_DOMAIN") or
-            os.getenv("STREAMLIT_SHARING_MODE") == "true" or
-            "streamlit.app" in str(os.getenv("HOSTNAME", "")) or
-            "/app" in str(os.getenv("PWD", ""))
-        )
+        server_port = os.getenv("STREAMLIT_SERVER_PORT", "")
+        server_address = os.getenv("STREAMLIT_SERVER_ADDRESS", "")
         
-        return not is_streamlit_cloud
+        return (
+            server_port == "8501" or
+            server_address == "localhost" or 
+            server_address == "127.0.0.1" or
+            "localhost" in str(server_address) or
+            "127.0.0.1" in str(server_address)
+        )
     
     def _init_session_state(self):
         """Initialize authentication session state"""
