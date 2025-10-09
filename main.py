@@ -1,289 +1,268 @@
 # main.py
 import streamlit as st
-from app.state import initialize_session_state
-from app.navigation import render_sidebar, display_page
+import os
 import streamlit.components.v1 as components
+from auth.auth_manager import get_auth_manager
 
-# ============================================================================
-# AUTHENTICATION TOGGLE
-# ============================================================================
-# To ENABLE authentication:
-#   1. Install: pip install google-auth google-auth-oauthlib sqlalchemy
-#   2. Configure: config/oauth_config.yaml with your Google OAuth credentials
-#   3. Set: AUTHENTICATION_ENABLED = True (below)
-#
-# To DISABLE authentication (development mode):
-#   Set: AUTHENTICATION_ENABLED = False
-# ============================================================================
+# Safe imports with fallbacks
+try:
+    from app.state import initialize_session_state
+except ImportError:
+    def initialize_session_state():
+        """Fallback initialization if state module fails"""
+        pass
 
-AUTHENTICATION_ENABLED = True  # ← CHANGE THIS TO True TO ENABLE AUTH
+try:
+    from app.navigation import render_sidebar, display_page
+except ImportError as e:
+    st.error(f"Error importing navigation: {e}")
+    def render_sidebar():
+        return "Dashboard"
+    def display_page(page):
+        st.error(f"Page {page} not available")
 
-# ============================================================================
-
-# Import auth modules only if authentication is enabled
-if AUTHENTICATION_ENABLED:
+# Test mode detection
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
+if TEST_MODE:
     try:
-        from auth.session_manager import SessionManager
-        from auth.quota_manager import QuotaManager
-        from auth.google_oauth import GoogleOAuthManager
-        from auth.user_activity import UserActivityLogger
-        from auth.oauth_interaction_logger import OAuthInteractionLogger, log_oauth_attempt, log_oauth_config_check, log_oauth_url_generation, log_oauth_callback, log_token_exchange, log_session_creation, log_oauth_success, log_oauth_error
-        from auth.interaction_logger import InteractionLogger, log_interaction, log_api_call, log_error, log_security_event
-        from database.db_manager import get_database_manager
-        from datetime import datetime, timedelta
-        from app.utils import clear_query_params, get_query_params
-        AUTH_AVAILABLE = True
-    except ImportError as e:
-        st.error(f"Authentication modules not available: {e}")
-        st.info("Run: pip install google-auth google-auth-oauthlib sqlalchemy")
-        AUTH_AVAILABLE = False
-        AUTHENTICATION_ENABLED = False
-else:
-    AUTH_AVAILABLE = False
+        from test_config import get_test_config, get_test_port
+        test_config = get_test_config()
+        print(f"🧪 Running in TEST MODE - Port: {get_test_port()}")
+    except ImportError:
+        TEST_MODE = False
+        print("⚠️ Test config not found, running in normal mode")
 
-# Disable cache clearing popup
+# Disable cache clearing popup and override functions
 def disabled_cache_clear(*args, **kwargs):
+    """Cache clearing has been disabled to prevent popup"""
     pass
 
+# Override cache clear methods to prevent popup
 if hasattr(st, 'cache_data'):
     st.cache_data.clear = disabled_cache_clear
 if hasattr(st, 'cache_resource'):  
     st.cache_resource.clear = disabled_cache_clear
 
-# Page Configuration
+# --- Page Configuration ---
+if TEST_MODE:
+    page_title = "Google Ads Simulator - TEST MODE"
+    page_icon = "🧪"
+else:
+    page_title = "Google Ads Simulator"
+    page_icon = "📊"
+
 st.set_page_config(
     layout="wide",
-    page_title="Google Ads Simulator",
-    page_icon="📊"
+    page_title=page_title,
+    page_icon=page_icon
 )
+
+# --- Google OAuth2 Login Handler ---
+auth_manager = get_auth_manager()
+
+# Detect callback from Google (after user login)
+query_params = st.query_params
+if "code" in query_params:
+    code = query_params["code"]
+    try:
+        tokens = auth_manager.exchange_code_for_tokens(code)
+        user_info = auth_manager.get_user_info(tokens["access_token"])
+        user_id = auth_manager.create_or_update_user(user_info)
+        jwt_token = auth_manager.create_session(user_id)
+        st.session_state["auth_token"] = jwt_token
+        st.success(f"✅ Welcome {user_info.get('name', 'User')}!")
+        st.experimental_rerun()
+    except Exception as e:
+        st.error(f"⚠️ Login failed: {e}")
+
+if "auth_token" not in st.session_state:
+    if st.button("🔐 Login with Google"):
+        auth_url = auth_manager.get_auth_url()
+        st.markdown(f"[Click here to log in with Google]({auth_url})")
+else:
+    st.success("✅ Logged in")
 
 components.html("""
 <script>
+// Completely disable cache clearing popup and functionality
 document.addEventListener('keydown', function(event) {
+    // Block 'C' key to prevent cache clearing dialog
     if (event.key === 'c' || event.key === 'C') {
         event.preventDefault();
         event.stopPropagation();
         return false;
     }
 }, true);
+
+// Override the cache clearing dialog function
+window.addEventListener('load', function() {
+    // Find and disable any cache clearing dialogs
+    const observer = new MutationObserver(() => {
+        // Remove any cache clearing dialogs or modals
+        const dialogs = document.querySelectorAll('[role="dialog"], .stModal, [data-testid*="modal"]');
+        dialogs.forEach(dialog => {
+            if (dialog.textContent && dialog.textContent.includes('Clear cache')) {
+                dialog.remove();
+            }
+        });
+        
+        // Remove cache clearing menu items
+        const menuItems = document.querySelectorAll('li, button, [role="menuitem"]');
+        menuItems.forEach(item => {
+            if (item.textContent && item.textContent.includes('Clear cache')) {
+                item.style.display = 'none';
+            }
+        });
+    });
+    
+    observer.observe(document.body, { childList: true, subtree: true });
+});
+
+// Override Streamlit's cache clearing functions
+if (window.streamlit) {
+    const originalCacheClear = window.streamlit.cache_data?.clear;
+    if (originalCacheClear) {
+        window.streamlit.cache_data.clear = function() {
+            console.log('Cache clearing disabled');
+            return;
+        };
+    }
+}
 </script>
 """, height=0)
 
-
-def handle_oauth_callback():
-    """Handle OAuth callback from Google."""
-    if not AUTH_AVAILABLE:
-        return
-    
-    query_params = st.query_params
-    
-    if 'code' in query_params:
-        # Start logging OAuth attempt
-        interaction_id = log_oauth_attempt()
-        
-        with st.spinner("🔐 Authenticating..."):
-            try:
-                oauth_manager = GoogleOAuthManager()
-                
-                # Log configuration check
-                config_status = oauth_manager.get_debug_info()
-                log_oauth_config_check(interaction_id, config_status)
-                
-                if not oauth_manager.is_configured():
-                    st.error("❌ OAuth not configured")
-                    log_oauth_error(interaction_id, "config_error", "OAuth not configured", config_status)
-                    st.query_params.clear()
-                    return
-                
-                code = query_params['code']
-                authorization_response = f"{oauth_manager.oauth_config['redirect_uri']}?code={code}"
-                
-                # Log callback received
-                log_oauth_callback(interaction_id, query_params)
-                
-                user_info = oauth_manager.handle_callback(authorization_response)
-                
-                if user_info:
-                    # Log successful token exchange
-                    log_token_exchange(interaction_id, True, user_info)
-                    
-                    try:
-                        db_manager = get_database_manager()
-                        user = db_manager.create_or_update_user(user_info)
-                        
-                        session_id = SessionManager.create_session(user_info)
-                        expires_at = datetime.now() + timedelta(hours=2)
-                        db_manager.create_session(user_info['email'], session_id, expires_at)
-                        
-                        # Log successful session creation
-                        log_session_creation(interaction_id, user_info['email'], True)
-                        
-                        UserActivityLogger.log_activity(user_info['email'], 'login')
-                        db_manager.log_activity(user_info['email'], 'login', {'method': 'google_oauth'})
-                        
-                        # Log overall OAuth success
-                        log_oauth_success(interaction_id, user_info['email'], user_info['name'])
-                        
-                        st.query_params.clear()
-                        st.success(f"✅ Welcome, {user_info['name']}!")
-                        st.balloons()
-                        
-                        # Small delay before rerun to ensure user sees success message
-                        import time
-                        time.sleep(1)
-                        st.rerun()
-                        
-                    except Exception as db_error:
-                        log_session_creation(interaction_id, user_info.get('email', 'unknown'), False, str(db_error))
-                        st.error(f"❌ Database error: {str(db_error)}")
-                        st.query_params.clear()
-                else:
-                    log_token_exchange(interaction_id, False, None, "User info retrieval failed")
-                    st.error("❌ Authentication failed. Please try again.")
-                    st.query_params.clear()
-                    
-            except Exception as e:
-                log_oauth_error(interaction_id, "callback_processing_error", str(e), {"query_params": query_params})
-                st.error(f"❌ Authentication error: {str(e)}")
-                st.query_params.clear()
-
-def render_quota_in_sidebar():
-    """Render quota indicator."""
-    if not AUTH_AVAILABLE:
-        return
-        
-    user_email = SessionManager.get_user_email()
-    if not user_email:
-        return
-    
-    quota_manager = QuotaManager()
-    quota_display = quota_manager.get_quota_display_data(user_email)
-    
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("📊 Quotas")
-    
-    for quota in quota_display['quotas'][:3]:
-        st.sidebar.caption(f"{quota['name']}: {quota['usage']}/{quota['limit']}")
-        st.sidebar.progress(
-            min(quota['percentage'] / 100, 1.0),
-            text=f"{quota['remaining']} left"
-        )
-    
-    reset_time = quota_display.get('reset_time', 0)
-    st.sidebar.caption(f"⏰ Resets: {reset_time}m")
-
+# --- Main Application Logic ---
 def main():
-    """Main application logic."""
-    try:
-        # Log application start
-        log_interaction("app_start", success=True, additional_data={"authentication_enabled": AUTHENTICATION_ENABLED})
-        
-        # Handle OAuth callback
-        if AUTHENTICATION_ENABLED and AUTH_AVAILABLE:
-            handle_oauth_callback()
+    # Initialize session state on first run
+    initialize_session_state()
+
+    # Show test mode indicator
+    if TEST_MODE:
+        st.warning("🧪 **TEST MODE ACTIVE** - This is a test version for development and educational purposes only.")
+
+    # Render the sidebar and get the current page selection
+    page = render_sidebar()
+
+    # Display the selected page
+    display_page(page)
     
-    # Check authentication
-    if AUTHENTICATION_ENABLED and AUTH_AVAILABLE:
-        is_authenticated = SessionManager.is_authenticated()
-        
-        if not is_authenticated:
-            # Simple, clean login interface
-            st.title("🔐 Google Ads Simulator")
-            st.markdown("### Welcome! Please sign in to continue")
-            
-            # Centered login button
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                if st.button("🔐 **Sign in with Google**", type="primary", use_container_width=True):
-                    if AUTH_AVAILABLE:
-                        # Start logging OAuth attempt
-                        interaction_id = log_oauth_attempt()
-                        
-                        oauth_manager = GoogleOAuthManager()
-                        
-                        # Log configuration check
-                        config_status = oauth_manager.get_debug_info()
-                        log_oauth_config_check(interaction_id, config_status)
-                        
-                        if oauth_manager.is_configured():
-                            auth_url = oauth_manager.get_authorization_url()
-                            if auth_url:
-                                # Log successful URL generation
-                                log_oauth_url_generation(interaction_id, auth_url, True)
-                                
-                                # Store interaction ID in session for callback tracking
-                                st.session_state['current_oauth_interaction_id'] = interaction_id
-                                
-                                st.markdown(f'<a href="{auth_url}" target="_blank" style="display:none" id="main_oauth_link"></a>', unsafe_allow_html=True)
-                                st.markdown("""
-                                <script>
-                                    document.getElementById('main_oauth_link').click();
-                                </script>
-                                """, unsafe_allow_html=True)
-                                st.success("🔗 Opening Google login in new tab...")
-                            else:
-                                log_oauth_url_generation(interaction_id, None, False)
-                                st.error("🔧 Failed to generate authentication URL.")
-                        else:
-                            log_oauth_error(interaction_id, "config_error", "OAuth not configured", config_status)
-                            st.error("🔧 OAuth not configured. Please contact administrator.")
-                    else:
-                        st.error("🔧 Authentication system not available.")
-            
-            # Simple instructions
-            st.markdown("""
-            **📋 Steps:**
-            1. Click "Sign in with Google" above
-            2. Sign in with your Google account  
-            3. Grant permissions
-            4. Return to this tab - you'll be logged in automatically
-            """)
-            
-            return
-        
-        # Authenticated - update activity
-        SessionManager.update_activity()
-        
-        # Show user in sidebar
-        with st.sidebar:
-            user_name = SessionManager.get_user_name()
-            user_email = SessionManager.get_user_email()
-            
-            st.markdown(f"### 👤 {user_name}")
-            st.caption(user_email)
-            
-            if st.button("🚪 Logout", use_container_width=True):
-                UserActivityLogger.log_activity(user_email, 'logout')
-                SessionManager.end_session()
-                st.rerun()
-            
-            render_quota_in_sidebar()
-    else:
-        # No authentication - dev mode
-        if not AUTHENTICATION_ENABLED:
-            with st.sidebar:
-                st.info("🛠️ **DEV MODE**")
-                st.caption("Authentication disabled")
+    # Render fallback chatbot if Dialogflow not configured
+    if not st.secrets.get("dialogflow", {}).get("project_id"):
+        render_fallback_chatbot()
+
+def render_fallback_chatbot():
+    """Render a simple fallback chatbot in bottom-right corner"""
+    import streamlit.components.v1 as components
     
-        # Main app
-        initialize_session_state()
-        page = render_sidebar()
+    chatbot_html = """
+    <div style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">
+        <div id="fallback-chat" style="
+            width: 320px;
+            height: 400px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            border: 1px solid #ddd;
+            display: none;
+        ">
+            <div style="background: #4285f4; color: white; padding: 12px; border-radius: 8px 8px 0 0;">
+                <h4 style="margin: 0; font-size: 16px;">🤖 AI Assistant</h4>
+                <p style="margin: 0; font-size: 12px; opacity: 0.9;">Google Ads Helper</p>
+            </div>
+            <div id="chat-content" style="height: 300px; overflow-y: auto; padding: 12px; background: #f8f9fa;">
+                <div style="color: #666; font-size: 14px; margin-bottom: 12px;">
+                    Hi! I can help you with Google Ads campaigns, keywords, and optimization.
+                </div>
+            </div>
+            <div style="padding: 12px; border-top: 1px solid #ddd;">
+                <input type="text" id="chat-input" placeholder="Ask about Google Ads..." style="
+                    width: 100%;
+                    padding: 8px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    margin-bottom: 8px;
+                ">
+                <div style="display: flex; gap: 8px;">
+                    <button onclick="sendMessage()" style="
+                        background: #4285f4;
+                        color: white;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        flex: 1;
+                    ">Send</button>
+                    <button onclick="toggleChat()" style="
+                        background: #ccc;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                    ">Close</button>
+                </div>
+            </div>
+        </div>
         
-        # Log page view
-        if AUTHENTICATION_ENABLED and AUTH_AVAILABLE:
-            user_email = SessionManager.get_user_email()
-            log_interaction("page_view", user_email, success=True, additional_data={"page": page})
-        else:
-            log_interaction("page_view", "anonymous", success=True, additional_data={"page": page})
-        
-        display_page(page)
-        
-    except Exception as e:
-        # Log any unhandled errors
-        error_message = f"Unhandled error in main application: {str(e)}"
-        log_error("main_application_error", error_message, user_email="unknown")
-        st.error(f"❌ Application error: {error_message}")
-        st.exception(e)
+        <button onclick="toggleChat()" style="
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: #4285f4;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 24px;
+            box-shadow: 0 4px 16px rgba(66, 133, 244, 0.4);
+            display: block;
+        ">🤖</button>
+    </div>
+    
+    <script>
+    function toggleChat() {
+        const chat = document.getElementById('fallback-chat');
+        if (chat.style.display === 'none') {
+            chat.style.display = 'block';
+        } else {
+            chat.style.display = 'none';
+        }
+    }
+    
+    function sendMessage() {
+        const input = document.getElementById('chat-input');
+        const message = input.value.trim();
+        if (message) {
+            const content = document.getElementById('chat-content');
+            content.innerHTML += '<div style="background: #e3f2fd; padding: 8px; margin: 8px 0; border-radius: 4px; font-size: 14px;"><strong>You:</strong> ' + message + '</div>';
+            
+            let response = "Thanks for your question! For detailed help, explore the Campaign Wizard or check the dashboard for insights.";
+            if (message.toLowerCase().includes('campaign')) {
+                response = "To create a campaign, go to the Campaign Wizard and follow the step-by-step process.";
+            } else if (message.toLowerCase().includes('keyword')) {
+                response = "Use the Keyword Planner to research relevant keywords for your business.";
+            } else if (message.toLowerCase().includes('budget')) {
+                response = "Set your daily budget in the Campaign Wizard and monitor performance in the dashboard.";
+            } else if (message.toLowerCase().includes('dashboard')) {
+                response = "The dashboard shows your campaign performance including clicks, impressions, and cost.";
+            }
+            
+            content.innerHTML += '<div style="background: white; padding: 8px; margin: 8px 0; border-radius: 4px; font-size: 14px; border-left: 3px solid #34a853;"><strong>Assistant:</strong> ' + response + '</div>';
+            content.scrollTop = content.scrollHeight;
+            input.value = '';
+        }
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        const input = document.getElementById('chat-input');
+        input.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    });
+    </script>
+    """
+    
+    components.html(chatbot_html, height=0)
 
 if __name__ == "__main__":
     main()

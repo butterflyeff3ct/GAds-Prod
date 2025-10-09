@@ -3,6 +3,7 @@ import os
 import time
 from typing import List, Dict
 import streamlit as st
+from services.usage_manager import check_limit, record_usage
 
 @st.cache_resource
 def get_gemini_client():
@@ -76,6 +77,13 @@ class GeminiClient:
     
     def generate_keywords(self, prompt: str) -> List[str]:
         """Generates keywords with graceful fallback on quota exceeded."""
+        # Check quota limits first
+        within_limit, reason = check_limit("gemini")
+        if not within_limit:
+            st.warning(f"🚫 Gemini quota exceeded: {reason}")
+            st.info("💡 Using mock keywords (quota exceeded)")
+            return self._generate_mock_keywords(prompt)
+        
         if self.quota_exceeded:
             st.info("💡 Using mock keywords (API quota exceeded)")
             return self._generate_mock_keywords(prompt)
@@ -97,6 +105,27 @@ class GeminiClient:
                 """
                 
                 response = self.model.generate_content(full_prompt)
+                
+                # Record token usage
+                tokens_used = len(full_prompt) + len(response.text) if response.text else len(full_prompt)
+                record_usage("gemini", tokens_used)
+                
+                # Log detailed usage for monitoring
+                try:
+                    from monitor.gemini_monitor import log_gemini_generation
+                    import time
+                    start_time = time.time()
+                    response_time = int((time.time() - start_time) * 1000)
+                    
+                    # Extract actual token usage from response if available
+                    actual_tokens = tokens_used
+                    if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                        actual_tokens = getattr(response.usage_metadata, 'total_token_count', tokens_used)
+                    
+                    log_gemini_generation("generate_keywords", actual_tokens, response_time, True)
+                except ImportError:
+                    pass  # Monitor not available
+                
                 keywords = response.text.strip().split(",")
                 return [kw.strip() for kw in keywords if kw.strip()]
                 
@@ -109,6 +138,13 @@ class GeminiClient:
     
     def generate_ads(self, prompt: str, num_headlines: int, num_descriptions: int, tone: str) -> Dict[str, List[str]]:
         """Generates ad copy with graceful fallback."""
+        # Check quota limits first
+        within_limit, reason = check_limit("gemini")
+        if not within_limit:
+            st.warning(f"🚫 Gemini quota exceeded: {reason}")
+            st.info("💡 Using mock ad copy (quota exceeded)")
+            return self._generate_mock_ads(prompt, num_headlines, num_descriptions)
+        
         if self.quota_exceeded:
             st.info("💡 Using mock ad copy (API quota exceeded)")
             return self._generate_mock_ads(prompt, num_headlines, num_descriptions)
@@ -130,6 +166,11 @@ class GeminiClient:
                 """
                 
                 response = self.model.generate_content(full_prompt)
+                
+                # Record token usage
+                tokens_used = len(full_prompt) + len(response.text) if response.text else len(full_prompt)
+                record_usage("gemini", tokens_used)
+                
                 return self._parse_ad_response(response.text)
                 
             except Exception as e:
@@ -141,6 +182,13 @@ class GeminiClient:
     
     def generate_campaign_insights(self, campaign_config: Dict) -> str:
         """Generates insights with graceful fallback."""
+        # Check quota limits first
+        within_limit, reason = check_limit("gemini")
+        if not within_limit:
+            st.warning(f"🚫 Gemini quota exceeded: {reason}")
+            st.info("💡 Using mock insights (quota exceeded)")
+            return self._generate_mock_insights(campaign_config)
+        
         if self.quota_exceeded:
             st.info("💡 Using mock insights (API quota exceeded)")
             return self._generate_mock_insights(campaign_config)
@@ -163,6 +211,11 @@ class GeminiClient:
                 """
                 
                 response = self.model.generate_content(full_prompt)
+                
+                # Record token usage
+                tokens_used = len(full_prompt) + len(response.text) if response.text else len(full_prompt)
+                record_usage("gemini", tokens_used)
+                
                 return response.text
                 
             except Exception as e:

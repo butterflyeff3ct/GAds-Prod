@@ -10,6 +10,7 @@ config - Copy.yaml
 # Streamlit configuration
 .streamlit/
 streamlit_config.toml
+.streamlit/secrets.toml
 
 # Python
 __pycache__/
@@ -157,39 +158,14 @@ tmp/
 *.log
 logs/
 
-# API keys and secrets (CRITICAL - DO NOT COMMIT)
+# API keys and secrets (additional safety)
 secrets.toml
 .secrets.toml
-.secrets/
-secrets/
 api_keys.txt
 credentials.json
 token.json
-client_secret*.json
-service_account*.json
-oauth_credentials.json
-
-# Authentication and database files
-database/*.db
-database/*.sqlite
-database/*.sqlite3
-auth_config.yaml
-oauth_config.yaml
-oauth_config_local.yaml
-
-# Environment variables
-.env
-.env.local
-.env.production
-.env.development
-
-# Google Cloud credentials
-gcp_credentials.json
-google_credentials.json
-application_default_credentials.json
 
 # Test files
-test_*.py
 *_test.py
 tests/
 

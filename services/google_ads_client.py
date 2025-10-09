@@ -4,6 +4,7 @@ from typing import List, Optional
 import yaml
 import os
 import streamlit as st
+from services.usage_manager import check_limit, record_usage
 
 try:
     from google.ads.googleads.client import GoogleAdsClient
@@ -46,6 +47,13 @@ class GoogleAdsKWPClient:
                 raise e
 
     def fetch_keyword_ideas(self, seed_keywords: List[str], location_ids: Optional[List[str]] = None) -> pd.DataFrame:
+        # Check quota limits first
+        within_limit, reason = check_limit("google_ads")
+        if not within_limit:
+            st.error(f"🚫 Google Ads API quota exceeded: {reason}")
+            st.warning("Please try again later or contact administrator.")
+            return pd.DataFrame()  # Return empty DataFrame
+        
         if location_ids is None:
             location_ids = ["2840"]  # United States
         
@@ -62,6 +70,11 @@ class GoogleAdsKWPClient:
         
         try:
             response = service.generate_keyword_ideas(request=request)
+            
+            # Record token usage (estimate based on keywords and results)
+            tokens_used = len(seed_keywords) * 10 + len(response.results) * 5
+            record_usage("google_ads", tokens_used)
+            
             results = []
             for idea in response.results:
                 metrics = idea.keyword_idea_metrics

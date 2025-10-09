@@ -1,5 +1,6 @@
 # /services/dialogflow_client.py
 import streamlit as st
+from services.usage_manager import check_limit, record_usage
 
 @st.cache_resource
 def get_dialogflow_client():
@@ -22,7 +23,19 @@ class DialogflowClient:
 
     def detect_intent(self, text: str, session_id: str, parameters: dict = None) -> dict:
         """Simulates detecting an intent and returns a deterministic response."""
+        # Check quota limits first
+        within_limit, reason = check_limit("dialogflow")
+        if not within_limit:
+            st.warning(f"🚫 Dialogflow quota exceeded: {reason}")
+            st.info("💬 Chatbot temporarily disabled due to quota limits.")
+            return {"response_text": "I'm currently unavailable due to quota limits. Please try again later."}
+        
         # Use session_id hash for deterministic response selection
         response_index = hash(session_id) % len(self.canned_responses)
         response_text = self.canned_responses[response_index]
+        
+        # Record token usage (estimate based on input and output text)
+        tokens_used = len(text) + len(response_text)
+        record_usage("dialogflow", tokens_used)
+        
         return {"response_text": response_text}
