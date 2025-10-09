@@ -23,14 +23,12 @@ class GoogleAuthManager:
             # Debug info (show environment detection)
             debug_info = []
             debug_info.append(f"🔧 Using redirect URI: {self.redirect_uri}")
-            debug_info.append(f"Environment variables:")
+            debug_info.append(f"Environment Detection:")
+            debug_info.append(f"  Server Port: {os.getenv('STREAMLIT_SERVER_PORT')}")
+            debug_info.append(f"  Server Address: {os.getenv('STREAMLIT_SERVER_ADDRESS')}")
+            debug_info.append(f"  Is Localhost: {self._is_running_locally()}")
             debug_info.append(f"  STREAMLIT_CLOUD: {os.getenv('STREAMLIT_CLOUD')}")
-            debug_info.append(f"  STREAMLIT_CLOUD_DOMAIN: {os.getenv('STREAMLIT_CLOUD_DOMAIN')}")
-            debug_info.append(f"  STREAMLIT_SERVER_PORT: {os.getenv('STREAMLIT_SERVER_PORT')}")
-            debug_info.append(f"  STREAMLIT_SERVER_ADDRESS: {os.getenv('STREAMLIT_SERVER_ADDRESS')}")
-            debug_info.append(f"  STREAMLIT_SHARING_MODE: {os.getenv('STREAMLIT_SHARING_MODE')}")
             debug_info.append(f"  HOSTNAME: {os.getenv('HOSTNAME')}")
-            debug_info.append(f"  PWD: {os.getenv('PWD')}")
             
             # Always show debug info for now to troubleshoot
             for info in debug_info:
@@ -146,22 +144,38 @@ class GoogleAuthManager:
         except:
             pass
         
-        # Force deployed URI if we detect Streamlit Cloud OR if we're not on localhost
-        # Also check if we're not running on the default Streamlit port
+        # Determine if we're running locally or on Streamlit Cloud
         server_port = os.getenv("STREAMLIT_SERVER_PORT", "")
+        server_address = os.getenv("STREAMLIT_SERVER_ADDRESS", "")
+        
+        # Check if we're clearly running locally
         is_localhost = (
-            server_port.endswith("8501") and 
-            "localhost" in str(os.getenv("STREAMLIT_SERVER_ADDRESS", ""))
+            server_port == "8501" or 
+            server_address == "localhost" or
+            server_address == "127.0.0.1" or
+            "localhost" in str(server_address)
         )
         
-        if is_streamlit_cloud or not is_localhost:
-            # Running on Streamlit Cloud - use deployed URI
-            deployed_uri = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
-            return deployed_uri
-        else:
+        if is_localhost:
             # Running locally - use localhost URI
             local_uri = auth_config.get("redirect_uri_local", "http://localhost:8501/")
             return local_uri
+        else:
+            # Running on Streamlit Cloud or any other environment - use deployed URI
+            deployed_uri = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
+            return deployed_uri
+    
+    def _is_running_locally(self):
+        """Helper method to check if running locally"""
+        server_port = os.getenv("STREAMLIT_SERVER_PORT", "")
+        server_address = os.getenv("STREAMLIT_SERVER_ADDRESS", "")
+        
+        return (
+            server_port == "8501" or 
+            server_address == "localhost" or
+            server_address == "127.0.0.1" or
+            "localhost" in str(server_address)
+        )
     
     def _init_session_state(self):
         """Initialize authentication session state"""
