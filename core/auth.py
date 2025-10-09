@@ -29,10 +29,26 @@ class GoogleAuthManager:
             debug_info.append(f"  Is Localhost: {self._is_running_locally()}")
             debug_info.append(f"  STREAMLIT_CLOUD: {os.getenv('STREAMLIT_CLOUD')}")
             debug_info.append(f"  HOSTNAME: {os.getenv('HOSTNAME')}")
+            debug_info.append(f"  PWD: {os.getenv('PWD')}")
+            
+            # Manual override option for debugging
+            debug_info.append("---")
+            debug_info.append("🔧 Manual Override (for debugging):")
             
             # Always show debug info for now to troubleshoot
             for info in debug_info:
                 st.caption(info)
+            
+            # Add manual override buttons for debugging
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Force Localhost URI"):
+                    self.redirect_uri = "http://localhost:8501/"
+                    st.caption("✅ Forced to use localhost URI")
+            with col2:
+                if st.button("🌐 Force Deployed URI"):
+                    self.redirect_uri = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
+                    st.caption("✅ Forced to use deployed URI")
             
             # Check if placeholder values are still being used
             if (self.client_id == "YOUR_CLIENT_ID_HERE" or 
@@ -148,12 +164,21 @@ class GoogleAuthManager:
         server_port = os.getenv("STREAMLIT_SERVER_PORT", "")
         server_address = os.getenv("STREAMLIT_SERVER_ADDRESS", "")
         
-        # Check if we're clearly running locally
+        # More comprehensive localhost detection
         is_localhost = (
             server_port == "8501" or 
+            server_port == "8502" or
+            server_port == "8503" or
             server_address == "localhost" or
             server_address == "127.0.0.1" or
-            "localhost" in str(server_address)
+            server_address == "0.0.0.0" or
+            "localhost" in str(server_address) or
+            "127.0.0.1" in str(server_address) or
+            # Check if we're not on Streamlit Cloud
+            not os.getenv("STREAMLIT_CLOUD") and
+            not os.getenv("STREAMLIT_CLOUD_DOMAIN") and
+            not os.getenv("STREAMLIT_SHARING_MODE") and
+            "streamlit.app" not in str(os.getenv("HOSTNAME", ""))
         )
         
         if is_localhost:
@@ -172,9 +197,18 @@ class GoogleAuthManager:
         
         return (
             server_port == "8501" or 
+            server_port == "8502" or
+            server_port == "8503" or
             server_address == "localhost" or
             server_address == "127.0.0.1" or
-            "localhost" in str(server_address)
+            server_address == "0.0.0.0" or
+            "localhost" in str(server_address) or
+            "127.0.0.1" in str(server_address) or
+            # Check if we're not on Streamlit Cloud
+            (not os.getenv("STREAMLIT_CLOUD") and
+             not os.getenv("STREAMLIT_CLOUD_DOMAIN") and
+             not os.getenv("STREAMLIT_SHARING_MODE") and
+             "streamlit.app" not in str(os.getenv("HOSTNAME", "")))
         )
     
     def _init_session_state(self):
