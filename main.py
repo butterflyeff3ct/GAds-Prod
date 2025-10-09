@@ -31,7 +31,7 @@ AUTHENTICATION_ENABLED = True  # ← CHANGE THIS TO False TO DISABLE AUTH (for t
          from auth.interaction_logger import InteractionLogger, log_interaction, log_api_call, log_error, log_security_event
          from database.db_manager import get_database_manager
          from datetime import datetime, timedelta
-        from app.utils import clear_query_params, get_query_params
+         from app.utils import clear_query_params, get_query_params
          AUTH_AVAILABLE = True
      except ImportError as e:
          st.error(f"Authentication modules not available: {e}")
