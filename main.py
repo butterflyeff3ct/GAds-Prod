@@ -4,6 +4,7 @@ import os
 from app.state import initialize_session_state
 from app.navigation import render_sidebar, display_page
 import streamlit.components.v1 as components
+from core.auth import require_auth, GoogleAuthManager
 
 # Test mode detection
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
@@ -91,13 +92,21 @@ if (window.streamlit) {
 """, height=0)
 
 # --- Main Application Logic ---
+@require_auth
 def main():
+    """Main application - protected by authentication"""
     # Initialize session state on first run
     initialize_session_state()
 
     # Show test mode indicator
     if TEST_MODE:
         st.warning("🧪 **TEST MODE ACTIVE** - This is a test version for development and educational purposes only.")
+
+    # Show welcome message with user info
+    auth = GoogleAuthManager()
+    user = auth.get_user()
+    if user:
+        st.success(f"👋 Welcome back, **{user.get('name')}**! Ready to create some amazing campaigns?")
 
     # Render the sidebar and get the current page selection
     page = render_sidebar()
