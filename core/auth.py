@@ -189,18 +189,26 @@ class GoogleAuthManager:
                 
                 col1, col2 = st.columns([1, 3])
                 with col1:
-                    if 'picture' in user:
+                    # Only display image if picture exists and is not None
+                    if user.get('picture'):
                         st.image(user['picture'], width=50)
+                    else:
+                        # Show a placeholder avatar for demo mode
+                        st.markdown("👤")
                 with col2:
                     st.write(f"**{user.get('name')}**")
                     st.caption(user.get('email'))
                 
-                if st.button("🚪 Logout", use_container_width=True):
+                # Only show logout button if OAuth is enabled
+                if self.oauth_enabled and st.button("🚪 Logout", use_container_width=True):
                     self.logout()
+                elif not self.oauth_enabled:
+                    st.caption("🔓 Demo Mode")
         else:
             col1, col2, col3 = st.columns([1, 3, 1])
             with col2:
-                st.info(f"👤 Logged in as: **{user.get('name')}** ({user.get('email')})")
+                mode_indicator = " (Demo)" if not self.oauth_enabled else ""
+                st.info(f"👤 Logged in as: **{user.get('name')}**{mode_indicator} ({user.get('email')})")
 
 
 def require_auth(func):

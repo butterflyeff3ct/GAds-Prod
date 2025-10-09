@@ -106,7 +106,11 @@ def main():
     auth = GoogleAuthManager()
     user = auth.get_user()
     if user:
-        st.success(f"👋 Welcome back, **{user.get('name')}**! Ready to create some amazing campaigns?")
+        if auth.oauth_enabled:
+            st.success(f"👋 Welcome back, **{user.get('name')}**! Ready to create some amazing campaigns?")
+        else:
+            st.info(f"🎯 **Demo Mode** - Welcome, **{user.get('name')}**! Explore the Google Ads Simulator features.")
+            st.caption("💡 This is a demonstration version. To enable full authentication, set up Google OAuth credentials.")
 
     # Render the sidebar and get the current page selection
     page = render_sidebar()
