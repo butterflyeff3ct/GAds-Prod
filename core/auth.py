@@ -12,7 +12,7 @@ class GoogleAuthManager:
     def __init__(self):
         """Initialize authentication manager with secrets"""
         try:
-            auth_config = st.secrets["auth"]
+            auth_config = st.secrets["google_oauth"]
             self.client_id = auth_config["client_id"]
             self.client_secret = auth_config["client_secret"]
             self.redirect_uri = auth_config["redirect_uri"]
