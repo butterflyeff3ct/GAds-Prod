@@ -2,6 +2,7 @@
 import streamlit as st
 import requests
 import secrets as python_secrets
+import os
 from urllib.parse import urlencode
 from typing import Optional, Dict, Any
 
@@ -15,7 +16,13 @@ class GoogleAuthManager:
             auth_config = st.secrets["google_oauth"]
             self.client_id = auth_config["client_id"]
             self.client_secret = auth_config["client_secret"]
-            self.redirect_uri = auth_config["redirect_uri"]
+            
+            # Dynamically determine redirect URI based on environment
+            self.redirect_uri = self._get_redirect_uri(auth_config)
+            
+            # Debug info (only show in development)
+            if not os.getenv("STREAMLIT_CLOUD"):
+                st.caption(f"🔧 Using redirect URI: {self.redirect_uri}")
             
             # Check if placeholder values are still being used
             if (self.client_id == "YOUR_CLIENT_ID_HERE" or 
@@ -30,7 +37,9 @@ class GoogleAuthManager:
                    - Navigate to "APIs & Services" > "Credentials"
                    - Click "Create Credentials" > "OAuth client ID"
                    - Choose "Web application"
-                   - Set authorized redirect URIs: `http://localhost:8501/`
+                   - Set authorized redirect URIs:
+                     - `http://localhost:8501/` (for local development)
+                     - `https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/` (for deployed app)
 
                 2. **Update Configuration:**
                    - Edit `.streamlit/secrets.toml`
@@ -39,7 +48,8 @@ class GoogleAuthManager:
                    [google_oauth]
                    client_id = "your-actual-client-id"
                    client_secret = "your-actual-client-secret"
-                   redirect_uri = "http://localhost:8501/"
+                   redirect_uri_local = "http://localhost:8501/"
+                   redirect_uri_deployed = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
                    ```
 
                 3. **Restart the Application:**
@@ -61,7 +71,9 @@ class GoogleAuthManager:
                - Navigate to "APIs & Services" > "Credentials"
                - Click "Create Credentials" > "OAuth client ID"
                - Choose "Web application"
-               - Set authorized redirect URIs: `http://localhost:8501/`
+               - Set authorized redirect URIs:
+                 - `http://localhost:8501/` (for local development)
+                 - `https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/` (for deployed app)
 
             2. **Update Configuration:**
                - Edit `.streamlit/secrets.toml`
@@ -70,7 +82,8 @@ class GoogleAuthManager:
                [google_oauth]
                client_id = "YOUR_CLIENT_ID"
                client_secret = "YOUR_CLIENT_SECRET"
-               redirect_uri = "http://localhost:8501/"
+               redirect_uri_local = "http://localhost:8501/"
+               redirect_uri_deployed = "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/"
                ```
 
             3. **Restart the Application:**
@@ -86,6 +99,18 @@ class GoogleAuthManager:
         
         # Initialize session state
         self._init_session_state()
+    
+    def _get_redirect_uri(self, auth_config):
+        """Dynamically determine the correct redirect URI based on environment"""
+        import os
+        
+        # Check if we're running on Streamlit Cloud
+        if os.getenv("STREAMLIT_CLOUD") or "streamlit.app" in os.getenv("STREAMLIT_SERVER_PORT", ""):
+            # Running on Streamlit Cloud - use deployed URI
+            return auth_config.get("redirect_uri_deployed", "https://butterflyeff3ct-gads-prod-main-qnzzei.streamlit.app/")
+        else:
+            # Running locally - use localhost URI
+            return auth_config.get("redirect_uri_local", "http://localhost:8501/")
     
     def _init_session_state(self):
         """Initialize authentication session state"""
