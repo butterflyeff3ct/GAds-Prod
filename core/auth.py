@@ -16,9 +16,15 @@ class GoogleAuthManager:
             self.client_id = auth_config["client_id"]
             self.client_secret = auth_config["client_secret"]
             self.redirect_uri = auth_config["redirect_uri"]
+            self.oauth_enabled = True
         except Exception as e:
-            st.error(f"❌ Error loading auth configuration: {e}")
-            st.stop()
+            st.warning(f"⚠️ OAuth configuration not found: {e}")
+            st.info("🔄 Running in demo mode without authentication")
+            self.oauth_enabled = False
+            # Set dummy values to prevent errors
+            self.client_id = None
+            self.client_secret = None
+            self.redirect_uri = None
         
         # Google OAuth endpoints
         self.auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -111,10 +117,20 @@ class GoogleAuthManager:
     
     def is_authenticated(self) -> bool:
         """Check if user is authenticated"""
+        if not self.oauth_enabled:
+            # In demo mode, always return True (no auth required)
+            return True
         return st.session_state.user is not None
     
     def get_user(self) -> Optional[Dict[str, Any]]:
         """Get current authenticated user"""
+        if not self.oauth_enabled:
+            # In demo mode, return a demo user
+            return {
+                "name": "Demo User",
+                "email": "demo@example.com",
+                "picture": None
+            }
         return st.session_state.user
     
     def logout(self):
@@ -127,6 +143,21 @@ class GoogleAuthManager:
     
     def show_login_screen(self):
         """Display login screen"""
+        if not self.oauth_enabled:
+            st.markdown("## 🎯 Google Ads Campaign Simulator")
+            st.markdown("### Demo Mode - No Authentication Required")
+            st.write("")
+            
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("🚀 Continue to App", type="primary", use_container_width=True):
+                    st.rerun()
+            
+            st.markdown("---")
+            st.info("💡 Running in demo mode. OAuth authentication is disabled.")
+            st.info("🔧 To enable OAuth, create a new Google OAuth client and update secrets.toml")
+            return
+        
         st.markdown("## 🔐 Google Ads Campaign Simulator")
         st.markdown("### Please log in to continue")
         st.write("")
