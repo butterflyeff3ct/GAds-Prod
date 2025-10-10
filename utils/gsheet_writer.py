@@ -20,11 +20,22 @@ class GSheetLogger:
         """Initialize Google Sheets client with caching"""
         try:
             # Get configuration from Streamlit secrets
-            gsheet_config = st.secrets.get("google_sheets", {})
+            try:
+                gsheet_config = st.secrets.get("google_sheets", {})
+            except Exception:
+                # If secrets are not available (e.g., during initialization), disable logging
+                self.enabled = False
+                return
+                
             self.sheet_id = sheet_id or gsheet_config.get("sheet_id")
             
             if not self.sheet_id:
-                st.warning("⚠️ Google Sheets logging disabled - no sheet_id configured")
+                # Only show warning if we're in a proper Streamlit context
+                try:
+                    if hasattr(st, 'warning'):
+                        st.warning("⚠️ Google Sheets logging disabled - no sheet_id configured")
+                except Exception:
+                    pass  # Silently disable if not in proper context
                 self.enabled = False
                 return
             
@@ -46,7 +57,12 @@ class GSheetLogger:
             # Use credentials from secrets
             credentials_info = gsheet_config.get("credentials")
             if not credentials_info:
-                st.warning("⚠️ Google Sheets logging disabled - no credentials configured")
+                # Only show warning if we're in a proper Streamlit context
+                try:
+                    if hasattr(st, 'warning'):
+                        st.warning("⚠️ Google Sheets logging disabled - no credentials configured")
+                except Exception:
+                    pass  # Silently disable if not in proper context
                 self.enabled = False
                 return
             

@@ -36,7 +36,11 @@ class GoogleAuthManager:
         except Exception as e:
             st.error("🔧 **OAuth Configuration Required**")
             st.error(f"❌ Error loading OAuth configuration")
-            self._initialize_google_sheets_logger()
+            # Initialize sheets logger without showing warnings during OAuth errors
+            try:
+                self.gsheet_logger = GSheetLogger()
+            except Exception:
+                self.gsheet_logger = None
             st.stop()
         
         # Google OAuth endpoints
