@@ -7,7 +7,7 @@ Functional UI for setting when ads should show.
 import streamlit as st
 from typing import Dict, List
 
-def render_ad_schedule_manager(config: Dict):
+def render_ad_schedule_manager(config: Dict, inside_expander: bool = False):
     """
     Render ad scheduling interface.
     
@@ -16,6 +16,10 @@ def render_ad_schedule_manager(config: Dict):
     - Set hours per day of week
     - Quick presets (Business hours, All day, Custom)
     - Visual calendar view
+    
+    Args:
+        config: Campaign configuration dictionary
+        inside_expander: Whether this is being rendered inside another expander
     """
     
     st.subheader("🕐 Ad Schedule (Dayparting)")
@@ -91,43 +95,87 @@ def render_ad_schedule_manager(config: Dict):
     day_labels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     
     for day, label in zip(days, day_labels):
-        with st.expander(f"📅 {label}", expanded=False):
-            current_hours = schedule.get(day, list(range(24)))
+        if inside_expander:
+            # When inside an expander, use a different approach to avoid nesting
+            if st.button(f"📅 {label}", key=f"day_button_{day}"):
+                st.session_state[f'show_{day}'] = not st.session_state.get(f'show_{day}', False)
             
-            # All day toggle
-            all_day = len(current_hours) == 24
-            if st.checkbox(f"All day", value=all_day, key=f"all_day_{day}"):
-                schedule[day] = list(range(24))
-            else:
-                # Hour range selector
-                col1, col2 = st.columns(2)
+            if st.session_state.get(f'show_{day}', False):
+                current_hours = schedule.get(day, list(range(24)))
                 
-                with col1:
-                    start_hour = st.selectbox(
-                        "Start Hour",
-                        options=list(range(24)),
-                        index=min(current_hours) if current_hours else 0,
-                        format_func=lambda x: f"{x:02d}:00",
-                        key=f"start_{day}"
-                    )
-                
-                with col2:
-                    end_hour = st.selectbox(
-                        "End Hour",
-                        options=list(range(24)),
-                        index=max(current_hours) if current_hours else 23,
-                        format_func=lambda x: f"{x:02d}:00",
-                        key=f"end_{day}"
-                    )
-                
-                # Generate hour range
-                if end_hour >= start_hour:
-                    schedule[day] = list(range(start_hour, end_hour + 1))
+                # All day toggle
+                all_day = len(current_hours) == 24
+                if st.checkbox(f"All day", value=all_day, key=f"all_day_{day}"):
+                    schedule[day] = list(range(24))
                 else:
-                    # Wraps around midnight
-                    schedule[day] = list(range(start_hour, 24)) + list(range(0, end_hour + 1))
+                    # Hour range selector
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        start_hour = st.selectbox(
+                            "Start Hour",
+                            options=list(range(24)),
+                            index=min(current_hours) if current_hours else 0,
+                            format_func=lambda x: f"{x:02d}:00",
+                            key=f"start_{day}"
+                        )
+                    
+                    with col2:
+                        end_hour = st.selectbox(
+                            "End Hour",
+                            options=list(range(24)),
+                            index=max(current_hours) if current_hours else 23,
+                            format_func=lambda x: f"{x:02d}:00",
+                            key=f"end_{day}"
+                        )
+                    
+                    # Generate hour range
+                    if end_hour >= start_hour:
+                        schedule[day] = list(range(start_hour, end_hour + 1))
+                    else:
+                        # Wraps around midnight
+                        schedule[day] = list(range(start_hour, 24)) + list(range(0, end_hour + 1))
+                    
+                    st.caption(f"Active: {len(schedule[day])} hours")
+        else:
+            # When not inside an expander, use the normal expander
+            with st.expander(f"📅 {label}", expanded=False):
+                current_hours = schedule.get(day, list(range(24)))
                 
-                st.caption(f"Active: {len(schedule[day])} hours")
+                # All day toggle
+                all_day = len(current_hours) == 24
+                if st.checkbox(f"All day", value=all_day, key=f"all_day_{day}"):
+                    schedule[day] = list(range(24))
+                else:
+                    # Hour range selector
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        start_hour = st.selectbox(
+                            "Start Hour",
+                            options=list(range(24)),
+                            index=min(current_hours) if current_hours else 0,
+                            format_func=lambda x: f"{x:02d}:00",
+                            key=f"start_{day}"
+                        )
+                    
+                    with col2:
+                        end_hour = st.selectbox(
+                            "End Hour",
+                            options=list(range(24)),
+                            index=max(current_hours) if current_hours else 23,
+                            format_func=lambda x: f"{x:02d}:00",
+                            key=f"end_{day}"
+                        )
+                    
+                    # Generate hour range
+                    if end_hour >= start_hour:
+                        schedule[day] = list(range(start_hour, end_hour + 1))
+                    else:
+                        # Wraps around midnight
+                        schedule[day] = list(range(start_hour, 24)) + list(range(0, end_hour + 1))
+                    
+                    st.caption(f"Active: {len(schedule[day])} hours")
     
     # Visual calendar heatmap
     st.markdown("---")
@@ -171,12 +219,16 @@ def render_ad_schedule_manager(config: Dict):
     st.metric("Schedule Coverage", f"{coverage_pct:.1f}%", f"{total_hours} of {total_possible} hours")
 
 
-def render_device_bid_adjustments(config: Dict):
+def render_device_bid_adjustments(config: Dict, inside_expander: bool = False):
     """
     Render device bid adjustment interface.
     
     Features:
     - Set bid adjustments for mobile, desktop, tablet
+    
+    Args:
+        config: Campaign configuration dictionary
+        inside_expander: Whether this is being rendered inside another expander
     - Show impact on average CPC
     - Best practices guidance
     """
@@ -266,20 +318,44 @@ def render_device_bid_adjustments(config: Dict):
         st.metric("Tablet Bid", f"${final_tablet:.2f}", f"${final_tablet - base_bid:+.2f}")
     
     # Best practices
-    with st.expander("💡 Best Practices", expanded=False):
-        st.markdown("""
-        **Common Device Adjustments:**
+    if inside_expander:
+        # When inside an expander, use a different approach to avoid nesting
+        if st.button("💡 Show Best Practices", key="device_best_practices"):
+            st.session_state.show_device_practices = not st.session_state.get('show_device_practices', False)
         
-        **Mobile:**
-        - E-commerce: -20% to -30% (lower conversion rates)
-        - Lead gen with calls: +20% to +50% (mobile users call more)
-        - Apps: +50% to +100% (mobile primary channel)
-        
-        **Desktop:**
-        - B2B: +10% to +30% (business users on desktop)
-        - High-value purchases: +20% to +50% (users research on desktop)
-        
-        **Tablet:**
-        - Usually -10% to +10% (between mobile and desktop)
-        - Evening hours: +20% (tablet usage peaks evening)
-        """)
+        if st.session_state.get('show_device_practices', False):
+            st.markdown("""
+            ### Common Device Adjustments
+            
+            **Mobile:**
+            - E-commerce: -20% to -30% (lower conversion rates)
+            - Lead gen with calls: +20% to +50% (mobile users call more)
+            - Apps: +50% to +100% (mobile primary channel)
+            
+            **Desktop:**
+            - B2B: +10% to +30% (business users on desktop)
+            - High-value purchases: +20% to +50% (users research on desktop)
+            
+            **Tablet:**
+            - Usually -10% to +10% (between mobile and desktop)
+            - Evening hours: +20% (tablet usage peaks evening)
+            """)
+    else:
+        # When not inside an expander, use the normal expander
+        with st.expander("💡 Best Practices", expanded=False):
+            st.markdown("""
+            **Common Device Adjustments:**
+            
+            **Mobile:**
+            - E-commerce: -20% to -30% (lower conversion rates)
+            - Lead gen with calls: +20% to +50% (mobile users call more)
+            - Apps: +50% to +100% (mobile primary channel)
+            
+            **Desktop:**
+            - B2B: +10% to +30% (business users on desktop)
+            - High-value purchases: +20% to +50% (users research on desktop)
+            
+            **Tablet:**
+            - Usually -10% to +10% (between mobile and desktop)
+            - Evening hours: +20% (tablet usage peaks evening)
+            """)

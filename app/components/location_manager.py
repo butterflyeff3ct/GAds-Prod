@@ -313,8 +313,9 @@ def render_impression_share_bidding_setup(config: Dict):
     if not config.get('has_max_cpc_limit'):
         st.info("💡 Consider setting a max CPC limit to prevent unexpectedly high costs")
     
-    # Best practices
-    with st.expander("💡 Best Practices", expanded=False):
+    # Best practices - REPLACED EXPANDER WITH TOGGLE
+    st.markdown("---")
+    if st.checkbox("💡 Show Best Practices", value=False, key="show_is_best_practices"):
         st.markdown("""
         ### When to Use Target Impression Share
         

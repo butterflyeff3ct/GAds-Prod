@@ -411,8 +411,7 @@ def render_campaign_wizard():
     # --- STEP 2: BIDDING ---
     elif st.session_state.campaign_step == 2:
         st.header("Step 2: Bidding")
-        st.error("⚠️ Bidding strategy needs attention")
-        
+                
         # Main bidding panel
         with st.container():
             st.subheader("Bidding")
@@ -611,7 +610,7 @@ def render_campaign_wizard():
         with st.container():
             st.markdown("---")
             with st.expander("**Audience Targeting**", expanded=True):
-                render_audience_targeting(cfg)
+                render_audience_targeting(cfg, inside_expander=True)
         
         # More settings section
         st.markdown("---")
@@ -644,12 +643,12 @@ def render_campaign_wizard():
             
             # Ad schedule - Use new component
             st.subheader("Ad Schedule & Device Targeting")
-            render_ad_schedule_manager(cfg)
+            render_ad_schedule_manager(cfg, inside_expander=True)
             
             # Device bid adjustments
             st.markdown("---")
             st.subheader("Device Bid Adjustments")
-            render_device_bid_adjustments(cfg)
+            render_device_bid_adjustments(cfg, inside_expander=True)
             
             # Campaign URL options
             st.subheader("Campaign URL options")
@@ -707,7 +706,7 @@ def render_campaign_wizard():
     # --- STEP 4: AI MAX ---
     elif st.session_state.campaign_step == 4:
         st.header("Step 4: AI Max")
-        st.success("✅ AI Max enabled with Gemini API")
+        st.success("✅ AI Max enabled with Gemini")
         st.write("Leverage AI to optimize your campaign performance with advanced machine learning")
         
         # AI Max configuration
@@ -763,7 +762,7 @@ def render_campaign_wizard():
             gemini_client = get_gemini_client()
             
             if gemini_client:
-                st.success("✅ Gemini API connected successfully")
+                st.success("✅ Gemini is Active")
                 
                 # AI-powered campaign insights
                 if st.button("Get AI Campaign Insights", use_container_width=True):
@@ -966,7 +965,6 @@ def render_campaign_wizard():
     # --- STEP 7: BUDGET ---
     elif st.session_state.campaign_step == 7:
         st.header("Step 7: Budget")
-        st.info("⭕ Budget configuration pending")
         
         col1, col2 = st.columns(2)
         
@@ -1432,7 +1430,6 @@ def render_campaign_wizard():
     # --- STEP 8: REVIEW ---
     elif st.session_state.campaign_step == 8:
         st.header("Step 8: Review")
-        st.info("⭕ Review and launch pending")
         
         # Summary cards
         col1, col2, col3 = st.columns(3)

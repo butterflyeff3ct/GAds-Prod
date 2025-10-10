@@ -1,34 +1,11 @@
-# main.py
 import streamlit as st
 import os
-from app.state import initialize_session_state
-from app.navigation import render_sidebar, display_page
+import time
 import streamlit.components.v1 as components
-from core.auth import require_auth, GoogleAuthManager
 
-# Test mode detection
+# --- MUST BE FIRST STREAMLIT COMMAND ---
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
-if TEST_MODE:
-    try:
-        from test_config import get_test_config, get_test_port
-        test_config = get_test_config()
-        print(f"🧪 Running in TEST MODE - Port: {get_test_port()}")
-    except ImportError:
-        TEST_MODE = False
-        print("⚠️ Test config not found, running in normal mode")
 
-# Disable cache clearing popup and override functions
-def disabled_cache_clear(*args, **kwargs):
-    """Cache clearing has been disabled to prevent popup"""
-    pass
-
-# Override cache clear methods to prevent popup
-if hasattr(st, 'cache_data'):
-    st.cache_data.clear = disabled_cache_clear
-if hasattr(st, 'cache_resource'):  
-    st.cache_resource.clear = disabled_cache_clear
-
-# --- Page Configuration ---
 if TEST_MODE:
     page_title = "Google Ads Simulator - TEST MODE"
     page_icon = "🧪"
@@ -41,12 +18,30 @@ st.set_page_config(
     page_title=page_title,
     page_icon=page_icon
 )
+# ✅ set_page_config() is now first Streamlit command
+
+# ---- IMPORTS THAT USE STREAMLIT ----
+from app.state import initialize_session_state
+from app.navigation import render_sidebar, display_page
+from core.auth import require_auth, GoogleAuthManager
+from utils.tracking import inject_clarity  # import here, not before set_page_config
+
+# ---- Inject Microsoft Clarity Tracking ----
+inject_clarity()
+
+# ---- Disable Cache Clear Popup ----
+def disabled_cache_clear(*args, **kwargs):
+    pass
+
+if hasattr(st, 'cache_data'):
+    st.cache_data.clear = disabled_cache_clear
+if hasattr(st, 'cache_resource'):
+    st.cache_resource.clear = disabled_cache_clear
 
 components.html("""
 <script>
-// Completely disable cache clearing popup and functionality
+// Disable Streamlit cache clearing popups
 document.addEventListener('keydown', function(event) {
-    // Block 'C' key to prevent cache clearing dialog
     if (event.key === 'c' || event.key === 'C') {
         event.preventDefault();
         event.stopPropagation();
@@ -54,19 +49,14 @@ document.addEventListener('keydown', function(event) {
     }
 }, true);
 
-// Override the cache clearing dialog function
 window.addEventListener('load', function() {
-    // Find and disable any cache clearing dialogs
     const observer = new MutationObserver(() => {
-        // Remove any cache clearing dialogs or modals
         const dialogs = document.querySelectorAll('[role="dialog"], .stModal, [data-testid*="modal"]');
         dialogs.forEach(dialog => {
             if (dialog.textContent && dialog.textContent.includes('Clear cache')) {
                 dialog.remove();
             }
         });
-        
-        // Remove cache clearing menu items
         const menuItems = document.querySelectorAll('li, button, [role="menuitem"]');
         menuItems.forEach(item => {
             if (item.textContent && item.textContent.includes('Clear cache')) {
@@ -74,20 +64,8 @@ window.addEventListener('load', function() {
             }
         });
     });
-    
     observer.observe(document.body, { childList: true, subtree: true });
 });
-
-// Override Streamlit's cache clearing functions
-if (window.streamlit) {
-    const originalCacheClear = window.streamlit.cache_data?.clear;
-    if (originalCacheClear) {
-        window.streamlit.cache_data.clear = function() {
-            console.log('Cache clearing disabled');
-            return;
-        };
-    }
-}
 </script>
 """, height=0)
 
@@ -95,24 +73,41 @@ if (window.streamlit) {
 @require_auth
 def main():
     """Main application - protected by authentication"""
-    # Initialize session state on first run
     initialize_session_state()
 
-    # Show test mode indicator
     if TEST_MODE:
-        st.warning("🧪 **TEST MODE ACTIVE** - This is a test version for development and educational purposes only.")
+        st.warning("🧪 **TEST MODE ACTIVE** - Development & educational version.")
 
-    # Show welcome message with user info
     auth = GoogleAuthManager()
     user = auth.get_user()
     if user:
-        st.success(f"👋 Welcome back, **{user.get('name')}**! Ready to create some amazing campaigns?")
+        st.success(f"👋 Welcome back, **{user.get('name')}**!")
 
-    # Render the sidebar and get the current page selection
     page = render_sidebar()
-
-    # Display the selected page
     display_page(page)
+
+
+def cleanup_on_exit():
+    """Clean up session data when app exits"""
+    try:
+        auth = GoogleAuthManager()
+        user = auth.get_user()
+        session_tracker = auth.get_session_tracker()
+
+        if user and session_tracker and auth.gsheet_logger_safe and auth.gsheet_logger_safe.enabled:
+            session_data = session_tracker.get_session_data()
+            auth.gsheet_logger_safe.log_session_end(
+                email=user.get("email"),
+                session_id=session_data["session_id"],
+                tokens_used=session_data["tokens_used"],
+                operations=session_data["operations"],
+                status="session_ended"
+            )
+    except Exception:
+        pass
+
+import atexit
+atexit.register(cleanup_on_exit)
 
 if __name__ == "__main__":
     main()

@@ -7,13 +7,7 @@ from app.attribution_page import render_attribution_analysis
 from app.search_terms_page import render_search_terms_report
 from app.planner_page import render_keyword_planner
 from app.campaign_wizard import render_campaign_wizard
-try:
-    from app.test_api_page import render_test_api_page
-    TEST_API_AVAILABLE = True
-except ImportError:
-    TEST_API_AVAILABLE = False
-    def render_test_api_page():
-        st.error("Test API page is not available in this environment.")
+from app.data_inspector_page import render_data_inspector
 from services.google_ads_client import GOOGLE_ADS_API_AVAILABLE
 from app.auction_insights_page import render_auction_insights
 from app.chatbot import render_dialogflow_chat
@@ -36,7 +30,7 @@ def render_sidebar():
 
         page = st.radio(
             "Navigation",
-            ["Dashboard", "Reports", "Attribution", "Search Terms", "Auction Insights", "Planner", "API Test"],
+            ["Dashboard", "Reports", "Attribution", "Search Terms", "Auction Insights", "Planner"],
             key="page_selection"
         )
         
@@ -60,11 +54,10 @@ def render_sidebar():
         
         # Cache Management
         st.subheader("🗑️ Cache Management")
-        if st.button("Clear All Caches", use_container_width=True, help="Clear all cached data from @st.cache_data and @st.cache_resource functions"):
-            # Clear all caches using the disabled functions (they do nothing but show success)
+        if st.button("Clear All Caches", use_container_width=True, help="Clear all cached data"):
             st.cache_data.clear()
             st.cache_resource.clear()
-            st.success("✅ Cache clearing is disabled to prevent popups. Use the sidebar button for manual cache management.")
+            st.success("✅ Caches cleared successfully")
             st.rerun()
         
         st.markdown("---")
@@ -102,7 +95,6 @@ def display_page(page: str):
         "Search Terms": render_search_terms_report,
         "Auction Insights": render_auction_insights,
         "Planner": render_keyword_planner,
-        "API Test": render_test_api_page,
     }
     # Get the function from the map and call it
     render_func = page_map.get(page)

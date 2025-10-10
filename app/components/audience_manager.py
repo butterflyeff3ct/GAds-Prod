@@ -42,7 +42,7 @@ AUDIENCE_LIBRARY = {
     }
 }
 
-def render_audience_targeting(config: Dict):
+def render_audience_targeting(config: Dict, inside_expander: bool = False):
     """
     Render audience targeting interface.
     
@@ -51,9 +51,14 @@ def render_audience_targeting(config: Dict):
     - Set bid adjustments per audience
     - Targeting vs Observation mode
     - Performance predictions
+    
+    Args:
+        config: Campaign configuration dictionary
+        inside_expander: Whether this is being rendered inside another expander
     """
     
-    st.subheader("👥 Audience Targeting")
+    if not inside_expander:
+        st.subheader("👥 Audience Targeting")
     
     st.write("""
     Target specific groups of users based on their interests, behaviors, or demographics.
@@ -151,51 +156,103 @@ def render_audience_targeting(config: Dict):
         st.info("No audiences selected. Ads will show to all users.")
     
     # Best practices
-    with st.expander("💡 Audience Targeting Best Practices", expanded=False):
-        st.markdown("""
-        ### Bid Adjustment Guidelines
+    if inside_expander:
+        # When inside an expander, use a different approach to avoid nesting
+        if st.button("💡 Show Best Practices", key="audience_best_practices"):
+            st.session_state.show_audience_practices = not st.session_state.get('show_audience_practices', False)
         
-        **Remarketing (Your Data):**
-        - All Visitors: +20% to +50% (familiar with brand)
-        - Cart Abandoners: +50% to +100% (high intent)
-        - Past Purchasers: +30% to +80% (proven buyers)
-        
-        **In-Market:**
-        - Active buyers: +20% to +40%
-        - Recent research: +10% to +30%
-        
-        **Affinity:**
-        - Related interests: 0% to +20%
-        - Broad interests: -10% to +10%
-        
-        **Demographics:**
-        - High-value segments: +30% to +100%
-        - Low-value segments: -30% to -50%
-        
-        ### Targeting vs Observation
-        
-        **Start with Observation:**
-        1. Run campaign in observation mode
-        2. Collect performance data by audience
-        3. Identify high-performing segments
-        4. Set bid adjustments based on data
-        
-        **Switch to Targeting when:**
-        - You have clear winner segments
-        - Budget is limited
-        - Need to focus on specific demographics
-        
-        ### Example Strategy
-        ```
-        Mode: Observation
-        - Past Purchasers: +80%
-        - In-Market Electronics: +30%
-        - Age 25-44: +20%
-        - All other audiences: 0%
-        
-        After 30 days → Review data → Adjust
-        ```
-        """)
+        if st.session_state.get('show_audience_practices', False):
+            st.markdown("""
+            ### Bid Adjustment Guidelines
+            
+            **Remarketing (Your Data):**
+            - All Visitors: +20% to +50% (familiar with brand)
+            - Cart Abandoners: +50% to +100% (high intent)
+            - Past Purchasers: +30% to +80% (proven buyers)
+            
+            **In-Market:**
+            - Active buyers: +20% to +40%
+            - Recent research: +10% to +30%
+            
+            **Affinity:**
+            - Related interests: 0% to +20%
+            - Broad interests: -10% to +10%
+            
+            **Demographics:**
+            - High-value segments: +30% to +100%
+            - Low-value segments: -30% to -50%
+            
+            ### Targeting vs Observation
+            
+            **Start with Observation:**
+            1. Run campaign in observation mode
+            2. Collect performance data by audience
+            3. Identify high-performing segments
+            4. Set bid adjustments based on data
+            
+            **Switch to Targeting when:**
+            - You have clear winner segments
+            - Budget is limited
+            - Need to focus on specific demographics
+            
+            ### Example Strategy
+            ```
+            Mode: Observation
+            - Past Purchasers: +80%
+            - In-Market Electronics: +30%
+            - Age 25-44: +20%
+            - All other audiences: 0%
+            
+            After 30 days → Review data → Adjust
+            ```
+            """)
+    else:
+        # When not inside an expander, use the normal expander
+        with st.expander("💡 Audience Targeting Best Practices", expanded=False):
+            st.markdown("""
+            ### Bid Adjustment Guidelines
+            
+            **Remarketing (Your Data):**
+            - All Visitors: +20% to +50% (familiar with brand)
+            - Cart Abandoners: +50% to +100% (high intent)
+            - Past Purchasers: +30% to +80% (proven buyers)
+            
+            **In-Market:**
+            - Active buyers: +20% to +40%
+            - Recent research: +10% to +30%
+            
+            **Affinity:**
+            - Related interests: 0% to +20%
+            - Broad interests: -10% to +10%
+            
+            **Demographics:**
+            - High-value segments: +30% to +100%
+            - Low-value segments: -30% to -50%
+            
+            ### Targeting vs Observation
+            
+            **Start with Observation:**
+            1. Run campaign in observation mode
+            2. Collect performance data by audience
+            3. Identify high-performing segments
+            4. Set bid adjustments based on data
+            
+            **Switch to Targeting when:**
+            - You have clear winner segments
+            - Budget is limited
+            - Need to focus on specific demographics
+            
+            ### Example Strategy
+            ```
+            Mode: Observation
+            - Past Purchasers: +80%
+            - In-Market Electronics: +30%
+            - Age 25-44: +20%
+            - All other audiences: 0%
+            
+            After 30 days → Review data → Adjust
+            ```
+            """)
 
 
 def calculate_audience_impact(audience_segments: List[str], 
