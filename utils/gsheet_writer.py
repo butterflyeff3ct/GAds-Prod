@@ -170,6 +170,17 @@ class GSheetLogger:
             est_offset = timedelta(hours=-5)
             return datetime.now(timezone(est_offset)).strftime("%Y-%m-%d %H:%M:%S")
     
+    def _format_duration(self, duration_ms: int) -> str:
+        """Convert duration from milliseconds to mm:ss format"""
+        if duration_ms <= 0:
+            return "00:00"
+        
+        total_seconds = duration_ms // 1000
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        
+        return f"{minutes:02d}:{seconds:02d}"
+    
     def _check_user_exists_cached(self, email: str) -> bool:
         """Check if user exists using cache to avoid API calls"""
         # Check cache first
@@ -311,15 +322,23 @@ class GSheetLogger:
                     
                     # Batch update - single API call
                     self._rate_limit()
+                    
+                    # Format duration as mm:ss
+                    duration_formatted = self._format_duration(duration_ms)
+                    
                     self.activity_worksheet.update(
                         f'E{row_num}:I{row_num}',
-                        [[logout_time, str(tokens_used), str(operations), str(duration_ms), status]]
+                        [[logout_time, str(tokens_used), str(operations), duration_formatted, status]]
                     )
                     
                     return True
             
             # If no matching row found, create new one
             self._rate_limit()
+            
+            # Format duration as mm:ss
+            duration_formatted = self._format_duration(duration_ms)
+            
             self.activity_worksheet.append_row([
                 email,
                 session_id,
@@ -328,7 +347,7 @@ class GSheetLogger:
                 logout_time,
                 str(tokens_used),
                 str(operations),
-                str(duration_ms),
+                duration_formatted,
                 status
             ])
             
@@ -405,6 +424,59 @@ class GSheetLogger:
             
         except Exception as e:
             return {}
+    
+    def close_orphaned_sessions(self, email: str) -> int:
+        """Close any orphaned sessions (status='started') for a user
+        This happens when user closes browser without logging out
+        Returns: Number of sessions closed
+        """
+        if not self.enabled:
+            return 0
+        
+        try:
+            self._rate_limit()
+            all_rows = self.activity_worksheet.get_all_values()
+            closed_count = 0
+            current_time = self._get_timestamp()
+            
+            for i, row in enumerate(all_rows):
+                # Check if this is a started session for this user with no logout time
+                if (len(row) >= 9 and row[0] == email and 
+                    row[8] == "started" and row[4] == ""):
+                    
+                    row_num = i + 1
+                    
+                    # Calculate duration from login time to now
+                    duration_ms = 0
+                    if row[3]:  # If login_time exists
+                        try:
+                            login_dt = datetime.strptime(row[3], "%Y-%m-%d %H:%M:%S")
+                            current_dt = datetime.strptime(current_time, "%Y-%m-%d %H:%M:%S")
+                            duration_ms = int((current_dt - login_dt).total_seconds() * 1000)
+                        except Exception:
+                            pass
+                    
+                    # Format duration as mm:ss
+                    duration_formatted = self._format_duration(duration_ms)
+                    
+                    # Get current token/operation counts from the row
+                    tokens_used = row[5] if len(row) > 5 else "0"
+                    operations = row[6] if len(row) > 6 else "0"
+                    
+                    # Update the session as "closed"
+                    self._rate_limit()
+                    self.activity_worksheet.update(
+                        f'E{row_num}:I{row_num}',
+                        [[current_time, tokens_used, operations, duration_formatted, "closed"]]
+                    )
+                    
+                    closed_count += 1
+            
+            return closed_count
+            
+        except Exception as e:
+            # Silently fail - this is a cleanup operation
+            return 0
     
     def get_user_sessions(self, email: str, limit: int = 10) -> list:
         """Get recent sessions for a specific user"""

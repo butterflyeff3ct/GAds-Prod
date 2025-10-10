@@ -219,11 +219,16 @@ class GoogleAuthManager:
             }
             
             if self.gsheet_logger_safe and self.gsheet_logger_safe.enabled:
+                # Close any orphaned sessions from previous browser sessions
+                user_email = user_info.get("email")
+                closed_count = self.gsheet_logger_safe.close_orphaned_sessions(user_email)
+                
+                # Store user if new
                 self.gsheet_logger_safe.store_user_if_new(user_data)
                 
                 # Log session start with trace ID
                 self.gsheet_logger_safe.log_session_start(
-                    email=user_info.get("email"),
+                    email=user_email,
                     session_id=session_tracker.session_id,
                     trace_id=trace_id
                 )
@@ -257,11 +262,14 @@ class GoogleAuthManager:
             
             if user and session_tracker and self.gsheet_logger_safe and self.gsheet_logger_safe.enabled:
                 session_data = session_tracker.get_session_data()
+                duration_ms = session_tracker.get_duration_ms()
+                
                 self.gsheet_logger_safe.log_session_end(
                     email=user.get("email"),
                     session_id=session_data["session_id"],
                     tokens_used=session_data["tokens_used"],
                     operations=session_data["operations"],
+                    duration_ms=duration_ms,
                     status="logged_out"
                 )
         except Exception:

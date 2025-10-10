@@ -96,12 +96,15 @@ def cleanup_on_exit():
 
         if user and session_tracker and auth.gsheet_logger_safe and auth.gsheet_logger_safe.enabled:
             session_data = session_tracker.get_session_data()
+            duration_ms = session_tracker.get_duration_ms()
+            
             auth.gsheet_logger_safe.log_session_end(
                 email=user.get("email"),
                 session_id=session_data["session_id"],
                 tokens_used=session_data["tokens_used"],
                 operations=session_data["operations"],
-                status="session_ended"
+                duration_ms=duration_ms,
+                status="closed"
             )
     except Exception:
         pass
