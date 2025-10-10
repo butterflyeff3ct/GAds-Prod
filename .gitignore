@@ -193,3 +193,6 @@ run_main.bat
 # Cache directories
 .cache/
 cache/
+
+# Credentials template (contains actual secrets)
+STREAMLIT_CLOUD_SECRETS_TEMPLATE.md
