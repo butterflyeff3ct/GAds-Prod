@@ -1,5 +1,5 @@
 """Google Sheets Integration for User Tracking and Session Logging
-Updated Schema with Rate Limiting and Caching
+Updated Schema with Rate Limiting, Caching, and Production-Ready Error Handling
 - Users Tab: Email | First Name | Last Name | First Login | Profile Pic | Locale | User ID
 - Activity Tab: Email | Session ID | Trace ID | Login Time | Logout Time | Tokens Used | Operations | Duration (ms) | Status
 """
@@ -10,33 +10,34 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Optional, Dict, Any
 import time
-import hashlib
+import os
 
 
 class GSheetLogger:
     """Handles Google Sheets logging for users and activity tracking with rate limiting"""
     
     def __init__(self, sheet_id: Optional[str] = None, show_warnings: bool = True):
-        """Initialize Google Sheets client with caching"""
+        """Initialize Google Sheets client with caching and production-ready error handling"""
         try:
+            # Detect environment
+            self.is_production = self._is_production_environment()
+            
             # Get configuration from Streamlit secrets
             try:
                 gsheet_config = st.secrets.get("google_sheets", {})
-            except Exception:
-                # If secrets are not available (e.g., during initialization), disable logging
+            except Exception as e:
+                # Secrets not available - disable logging gracefully
+                if show_warnings and self.is_production:
+                    self._show_config_warning()
                 self.enabled = False
                 return
                 
             self.sheet_id = sheet_id or gsheet_config.get("sheet_id")
             
             if not self.sheet_id:
-                # Only show warning if explicitly requested and in proper context
-                if show_warnings:
-                    try:
-                        if hasattr(st, 'warning'):
-                            st.warning("⚠️ Google Sheets logging disabled - no sheet_id configured")
-                    except Exception:
-                        pass  # Silently disable if not in proper context
+                # Only show warning in production if explicitly requested
+                if show_warnings and self.is_production:
+                    self._show_config_warning()
                 self.enabled = False
                 return
             
@@ -58,13 +59,9 @@ class GSheetLogger:
             # Use credentials from secrets
             credentials_info = gsheet_config.get("credentials")
             if not credentials_info:
-                # Only show warning if explicitly requested and in proper context
-                if show_warnings:
-                    try:
-                        if hasattr(st, 'warning'):
-                            st.warning("⚠️ Google Sheets logging disabled - no credentials configured")
-                    except Exception:
-                        pass  # Silently disable if not in proper context
+                # Only show warning in production if explicitly requested
+                if show_warnings and self.is_production:
+                    self._show_config_warning()
                 self.enabled = False
                 return
             
@@ -82,8 +79,41 @@ class GSheetLogger:
             self.enabled = True
             
         except Exception as e:
-            st.error(f"❌ Google Sheets initialization failed: {e}")
+            error_msg = str(e)
+            
+            # Only show errors in production with specific guidance
+            if show_warnings and self.is_production:
+                if "credentials" in error_msg.lower() or "authentication" in error_msg.lower():
+                    self._show_config_warning()
+                else:
+                    st.error(f"❌ Google Sheets initialization failed: {error_msg}")
+            
             self.enabled = False
+    
+    def _is_production_environment(self) -> bool:
+        """Detect if running on Streamlit Cloud (production)"""
+        # Check multiple indicators of Streamlit Cloud environment
+        indicators = [
+            "streamlit.app" in os.getenv("HOSTNAME", ""),
+            os.getenv("STREAMLIT_SHARING_MODE") == "true",
+            "/mount/src" in os.getcwd(),
+            "streamlit-cloud" in os.getenv("HOME", "").lower(),
+            os.path.exists("/mount/src")  # Streamlit Cloud specific mount
+        ]
+        return any(indicators)
+    
+    def _show_config_warning(self):
+        """Show user-friendly configuration warning for production"""
+        st.warning("""
+        ⚠️ **Google Sheets Logging Not Configured**
+        
+        To enable user tracking in production:
+        1. Go to your Streamlit Cloud dashboard
+        2. Click on your app → Settings → Secrets
+        3. Add your Google Sheets configuration (see DEPLOYMENT_GUIDE.md)
+        
+        **User data will NOT be logged until this is configured.**
+        """)
     
     def _rate_limit(self):
         """Enforce rate limiting between API calls"""
@@ -199,9 +229,11 @@ class GSheetLogger:
             
         except Exception as e:
             if "429" in str(e) or "Quota exceeded" in str(e):
-                st.warning("⚠️ Rate limit reached. User data will be logged on next session.")
+                if self.is_production:
+                    st.warning("⚠️ Rate limit reached. User data will be logged on next session.")
             else:
-                st.error(f"❌ Failed to store user data: {e}")
+                if self.is_production:
+                    st.error(f"❌ Failed to store user data: {e}")
             return False
     
     def log_session_start(self, email: str, session_id: str, 
@@ -235,9 +267,11 @@ class GSheetLogger:
             
         except Exception as e:
             if "429" in str(e) or "Quota exceeded" in str(e):
-                st.warning("⚠️ Rate limit reached. Session will be logged on next operation.")
+                if self.is_production:
+                    st.warning("⚠️ Rate limit reached. Session will be logged on next operation.")
             else:
-                st.error(f"❌ Failed to log session start: {e}")
+                if self.is_production:
+                    st.error(f"❌ Failed to log session start: {e}")
             return False
     
     def log_session_end(self, email: str, session_id: str, 
@@ -302,9 +336,11 @@ class GSheetLogger:
             
         except Exception as e:
             if "429" in str(e) or "Quota exceeded" in str(e):
-                st.warning("⚠️ Rate limit reached. Session end will be logged later.")
+                if self.is_production:
+                    st.warning("⚠️ Rate limit reached. Session end will be logged later.")
             else:
-                st.error(f"❌ Failed to log session end: {e}")
+                if self.is_production:
+                    st.error(f"❌ Failed to log session end: {e}")
             return False
     
     def update_session_metrics(self, email: str, session_id: str, 
@@ -437,4 +473,3 @@ class SessionTracker:
             "operations": self.operations_count,
             "duration_ms": self.get_duration_ms()
         }
-
