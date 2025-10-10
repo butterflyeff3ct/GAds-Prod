@@ -16,7 +16,7 @@ import hashlib
 class GSheetLogger:
     """Handles Google Sheets logging for users and activity tracking with rate limiting"""
     
-    def __init__(self, sheet_id: Optional[str] = None):
+    def __init__(self, sheet_id: Optional[str] = None, show_warnings: bool = True):
         """Initialize Google Sheets client with caching"""
         try:
             # Get configuration from Streamlit secrets
@@ -30,12 +30,13 @@ class GSheetLogger:
             self.sheet_id = sheet_id or gsheet_config.get("sheet_id")
             
             if not self.sheet_id:
-                # Only show warning if we're in a proper Streamlit context
-                try:
-                    if hasattr(st, 'warning'):
-                        st.warning("⚠️ Google Sheets logging disabled - no sheet_id configured")
-                except Exception:
-                    pass  # Silently disable if not in proper context
+                # Only show warning if explicitly requested and in proper context
+                if show_warnings:
+                    try:
+                        if hasattr(st, 'warning'):
+                            st.warning("⚠️ Google Sheets logging disabled - no sheet_id configured")
+                    except Exception:
+                        pass  # Silently disable if not in proper context
                 self.enabled = False
                 return
             
@@ -57,12 +58,13 @@ class GSheetLogger:
             # Use credentials from secrets
             credentials_info = gsheet_config.get("credentials")
             if not credentials_info:
-                # Only show warning if we're in a proper Streamlit context
-                try:
-                    if hasattr(st, 'warning'):
-                        st.warning("⚠️ Google Sheets logging disabled - no credentials configured")
-                except Exception:
-                    pass  # Silently disable if not in proper context
+                # Only show warning if explicitly requested and in proper context
+                if show_warnings:
+                    try:
+                        if hasattr(st, 'warning'):
+                            st.warning("⚠️ Google Sheets logging disabled - no credentials configured")
+                    except Exception:
+                        pass  # Silently disable if not in proper context
                 self.enabled = False
                 return
             

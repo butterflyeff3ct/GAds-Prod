@@ -38,7 +38,7 @@ class GoogleAuthManager:
             st.error(f"❌ Error loading OAuth configuration")
             # Initialize sheets logger without showing warnings during OAuth errors
             try:
-                self.gsheet_logger = GSheetLogger()
+                self.gsheet_logger = GSheetLogger(show_warnings=False)
             except Exception:
                 self.gsheet_logger = None
             st.stop()
@@ -61,7 +61,7 @@ class GoogleAuthManager:
     def _initialize_google_sheets_logger(self):
         """Initialize Google Sheets logger with error handling"""
         try:
-            self.gsheet_logger = GSheetLogger()
+            self.gsheet_logger = GSheetLogger(show_warnings=False)
         except Exception:
             self.gsheet_logger = None
     
