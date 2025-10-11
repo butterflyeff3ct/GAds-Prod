@@ -168,6 +168,16 @@ class GoogleAuthManager:
                     # Get user info
                     user_info = self.get_user_info(access_token)
                     
+                    # ✅ STEP 3: CHECK USER ACCESS WITH LOGIN GATE
+                    from app.login_gate import integrate_with_oauth_login
+                    
+                    if not integrate_with_oauth_login(user_info):
+                        # User doesn't have access - message already shown
+                        # Clear auth state and stop
+                        st.session_state.auth_code_processed = True
+                        st.stop()
+                    
+                    # User approved! Continue with login
                     st.session_state.user = user_info
                     st.session_state.auth_code_processed = True
                     
@@ -294,8 +304,20 @@ class GoogleAuthManager:
         
         auth_url = self.get_authorization_url()
         
+        # ✅ STEP 4: ADD SIGNUP AND LOGIN BUTTONS
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
+            # Signup button
+            if st.button(
+                "📝 Request Access",
+                use_container_width=True,
+                help="New users need to request access first"
+            ):
+                st.switch_page("pages/1_📝_Request_Access.py")
+            
+            st.write("")  # Spacing
+            
+            # Login button
             st.link_button(
                 "🔑 Sign in with Google",
                 auth_url,
@@ -304,7 +326,7 @@ class GoogleAuthManager:
             )
         
         st.markdown("---")
-        st.info("💡 You need a Google account to access this application")
+        st.info("💡 New users: Request access first, then log in once approved")
     
     def show_user_info(self, sidebar: bool = True):
         """Display logged-in user information"""
@@ -327,6 +349,15 @@ class GoogleAuthManager:
                     st.write(f"**{user.get('name')}**")
                     st.caption(user.get('email'))
                 
+                # ✅ ADMIN DASHBOARD LINK (for admins only)
+                from app.admin_dashboard import is_admin
+                user_email = user.get('email', '')
+                
+                if is_admin(user_email):
+                    st.markdown("")
+                    if st.button("👨‍💼 Admin Dashboard", use_container_width=True, type="secondary"):
+                        st.switch_page("pages/9_👨‍💼_Admin_Dashboard.py")
+                
                 if st.button("🚪 Logout", use_container_width=True):
                     self.logout()
 
@@ -344,7 +375,7 @@ def require_auth(func):
         if not auth.is_authenticated():
             auth.show_login_screen()
             st.stop()
-        
+
         # Show user info in sidebar
         auth.show_user_info(sidebar=True)
         

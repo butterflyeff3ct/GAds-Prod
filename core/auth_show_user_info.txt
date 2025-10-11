@@ -1,0 +1,32 @@
+    def show_user_info(self, sidebar: bool = True):
+        """Display logged-in user information"""
+        user = self.get_user()
+        if not user:
+            return
+        
+        if sidebar:
+            with st.sidebar:
+                st.markdown("---")
+                st.markdown("### 👤 Logged in as:")
+                
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    if user.get('picture'):
+                        st.image(user['picture'], width=50)
+                    else:
+                        st.markdown("👤")
+                with col2:
+                    st.write(f"**{user.get('name')}**")
+                    st.caption(user.get('email'))
+                
+                # ✅ ADMIN DASHBOARD LINK (for admins only)
+                from app.admin_dashboard import is_admin
+                user_email = user.get('email', '')
+                
+                if is_admin(user_email):
+                    st.markdown("")
+                    if st.button("👨‍💼 Admin Dashboard", use_container_width=True, type="secondary"):
+                        st.switch_page("app/admin_dashboard.py")
+                
+                if st.button("🚪 Logout", use_container_width=True):
+                    self.logout()

@@ -25,6 +25,7 @@ from app.state import initialize_session_state
 from app.navigation import render_sidebar, display_page
 from core.auth import require_auth, GoogleAuthManager
 from utils.tracking import inject_clarity  # import here, not before set_page_config
+from app.login_gate import integrate_with_oauth_login
 
 # ---- Inject Microsoft Clarity Tracking ----
 inject_clarity()
