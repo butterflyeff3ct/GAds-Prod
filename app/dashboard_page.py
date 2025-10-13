@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
-from app.tracking_test_page import render_tracking_status
 
 def render_dashboard():
     """Renders the main dashboard with Google Ads-style interface."""
@@ -12,9 +11,6 @@ def render_dashboard():
 
     if df is None or df.empty:
         st.warning("📋 No campaign data available. Create and run a new campaign to see results.")
-        
-        # Add tracking status widget
-        render_tracking_status()
         
         col1, col2 = st.columns(2)
         with col1:
@@ -67,8 +63,7 @@ def render_dashboard():
         else:
             st.info("📚 Mock")
     with col4:
-        # Add tracking status widget
-        render_tracking_status()
+        st.info("🎯 Active")
 
     # ========== GOOGLE ADS STYLE METRIC CARDS ==========
     # Initialize selected metrics if not exists

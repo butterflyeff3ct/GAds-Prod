@@ -218,6 +218,20 @@ class GoogleAuthManager:
             st.session_state.session_tracker = session_tracker
             st.session_state.session_id = session_tracker.session_id
             
+            # NEW: Initialize quota system with user context
+            from app.quota_system import get_quota_manager
+            quota_mgr = get_quota_manager()
+            
+            # Set user context in quota manager
+            quota_mgr.set_user_context(
+                user_id=user_info.get("sub"),
+                email=user_info.get("email"),
+                session_id=session_tracker.session_id
+            )
+            
+            # Load user's existing quota usage from sheets
+            quota_mgr.load_quotas_from_sheets(user_info.get("email"))
+            
             # Store user data in Google Sheets (if new user)
             user_data = {
                 "email": user_info.get("email", ""),
@@ -348,15 +362,6 @@ class GoogleAuthManager:
                 with col2:
                     st.write(f"**{user.get('name')}**")
                     st.caption(user.get('email'))
-                
-                # ✅ ADMIN DASHBOARD LINK (for admins only)
-                from app.admin_dashboard import is_admin
-                user_email = user.get('email', '')
-                
-                if is_admin(user_email):
-                    st.markdown("")
-                    if st.button("👨‍💼 Admin Dashboard", use_container_width=True, type="secondary"):
-                        st.switch_page("pages/9_👨‍💼_Admin_Dashboard.py")
                 
                 if st.button("🚪 Logout", use_container_width=True):
                     self.logout()

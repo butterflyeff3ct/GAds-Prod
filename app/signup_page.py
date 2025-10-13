@@ -1,11 +1,9 @@
 """
 User Signup Page - Request Access to Google Ads Simulator
-FIXED: Buttons are now properly separated from forms
 """
 
 import streamlit as st
 from utils.user_management_sheets import get_user_manager, UserManagementSheets
-from utils.recaptcha import get_recaptcha_manager
 import re
 
 
@@ -58,13 +56,6 @@ def show_signup_form(user_mgr):
             value=False
         )
         
-        # reCAPTCHA widget
-        recaptcha_mgr = get_recaptcha_manager()
-        if recaptcha_mgr.enabled:
-            st.markdown("")
-            st.markdown("**Verify you're human:**")
-            recaptcha_response = recaptcha_mgr.render_recaptcha(key="signup_recaptcha")
-        
         # Submit button
         submitted = st.form_submit_button(
             "🚀 Request Access",
@@ -88,15 +79,6 @@ def show_signup_form(user_mgr):
             
             if not agree_terms:
                 errors.append("You must agree to the terms to continue")
-            
-            # Validate reCAPTCHA if enabled
-            recaptcha_mgr = get_recaptcha_manager()
-            if recaptcha_mgr.enabled:
-                recaptcha_token = st.session_state.get('signup_recaptcha', '')
-                is_valid, error_msg = recaptcha_mgr.verify_recaptcha(recaptcha_token)
-                
-                if not is_valid:
-                    errors.append(error_msg or "Please complete the reCAPTCHA verification")
             
             # Show errors
             if errors:
@@ -242,13 +224,6 @@ def show_denied_user_reapply(user):
                 height=100
             )
             
-            # reCAPTCHA for reapplication
-            recaptcha_mgr = get_recaptcha_manager()
-            if recaptcha_mgr.enabled:
-                st.markdown("")
-                st.markdown("**Verify you're human:**")
-                recaptcha_response = recaptcha_mgr.render_recaptcha(key="reapply_recaptcha")
-            
             reapply_submitted = st.form_submit_button(
                 "🔄 Submit Reapplication",
                 type="primary"
@@ -259,14 +234,6 @@ def show_denied_user_reapply(user):
                 
                 if not explanation:
                     errors.append("Please provide an explanation for your reapplication")
-                
-                # Validate reCAPTCHA if enabled
-                if recaptcha_mgr.enabled:
-                    recaptcha_token = st.session_state.get('reapply_recaptcha', '')
-                    is_valid, error_msg = recaptcha_mgr.verify_recaptcha(recaptcha_token)
-                    
-                    if not is_valid:
-                        errors.append(error_msg or "Please complete the reCAPTCHA verification")
                 
                 if errors:
                     for error in errors:

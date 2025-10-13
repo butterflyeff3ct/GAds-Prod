@@ -1,27 +1,55 @@
 # /features/keyword_extractor.py
-from typing import List, Dict
+from typing import List, Dict, Optional
 import requests
 from bs4 import BeautifulSoup
 import re
 import streamlit as st
 
-try:
-    from keybert import KeyBERT
-    from sentence_transformers import SentenceTransformer
-    ADVANCED_KEYWORDS = True
-except ImportError:
-    ADVANCED_KEYWORDS = False
+# Track if advanced features are available
+ADVANCED_KEYWORDS = True
+
+# Lazy-loaded models - cached to prevent reinitialization
+_keybert_model = None
+_sentence_model = None
+
+
+@st.cache_resource
+def _get_keybert_model():
+    """Lazy load KeyBERT model with caching to prevent Torch reinitialization"""
+    global _keybert_model, _sentence_model
+    
+    if _keybert_model is not None:
+        return _keybert_model, True
+    
+    try:
+        # Import only when needed
+        from keybert import KeyBERT
+        from sentence_transformers import SentenceTransformer
+        
+        _sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+        _keybert_model = KeyBERT(model=_sentence_model)
+        return _keybert_model, True
+    except ImportError:
+        return None, False
+    except Exception as e:
+        st.warning(f"Could not load KeyBERT models: {e}. Using basic extraction.")
+        return None, False
+
 
 class KeywordExtractor:
     def __init__(self):
-        self.use_advanced = ADVANCED_KEYWORDS
-        if self.use_advanced:
-            try:
-                self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
-                self.kw_model = KeyBERT(model=self.sentence_model)
-            except Exception as e:
-                st.warning(f"Could not load KeyBERT models: {e}. Falling back to basic extraction.")
-                self.use_advanced = False
+        """Initialize keyword extractor - models are lazy-loaded when needed"""
+        self.use_advanced = True  # Will try advanced first
+        self._model_loaded = False
+
+    def _get_model(self):
+        """Get the KeyBERT model, loading it lazily if needed"""
+        if not self._model_loaded:
+            model, success = _get_keybert_model()
+            self.use_advanced = success
+            self._model_loaded = True
+            return model
+        return _keybert_model
 
     def extract_from_url(self, url: str, num_keywords: int = 20) -> Dict[str, List[str]]:
         try:
@@ -41,8 +69,11 @@ class KeywordExtractor:
             if not full_text or len(full_text) < 50:
                 return {'exact': [], 'phrase': [], 'broad': []}
 
-            if self.use_advanced:
-                keywords = self.kw_model.extract_keywords(
+            # Try to get model (lazy load)
+            kw_model = self._get_model()
+            
+            if kw_model and self.use_advanced:
+                keywords = kw_model.extract_keywords(
                     full_text, keyphrase_ngram_range=(1, 3), stop_words='english',
                     use_mmr=True, diversity=0.5, top_n=num_keywords
                 )
@@ -68,8 +99,11 @@ class KeywordExtractor:
         # Clean and prepare text
         text = re.sub(r'\s+', ' ', text).strip()
         
-        if self.use_advanced:
-            keywords = self.kw_model.extract_keywords(
+        # Try to get model (lazy load)
+        kw_model = self._get_model()
+        
+        if kw_model and self.use_advanced:
+            keywords = kw_model.extract_keywords(
                 text, keyphrase_ngram_range=(1, 3), stop_words='english',
                 use_mmr=True, diversity=0.5, top_n=num_keywords
             )
