@@ -3,13 +3,88 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
-from app.dashboard_cache import (
-    get_dataframe_hash,
-    calculate_dashboard_metrics,
-    aggregate_time_series,
-    aggregate_keyword_performance,
-    aggregate_daily_spend
-)
+import hashlib
+
+try:
+    from app.dashboard_cache import (
+        get_dataframe_hash,
+        calculate_dashboard_metrics,
+        aggregate_time_series,
+        aggregate_keyword_performance,
+        aggregate_daily_spend
+    )
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+    # Fallback functions if cache module not available
+    def get_dataframe_hash(df):
+        return hashlib.md5(str(df.shape).encode()).hexdigest()
+    
+    def calculate_dashboard_metrics(df_hash, df):
+        numeric_cols = ['cost', 'conversions', 'clicks', 'impressions', 'revenue']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        total_clicks = int(df['clicks'].sum())
+        total_impressions = int(df['impressions'].sum())
+        total_cost = float(df['cost'].sum())
+        total_conversions = int(df['conversions'].sum())
+        total_revenue = float(df['revenue'].sum())
+        
+        avg_cpc = (total_cost / total_clicks) if total_clicks > 0 else 0
+        ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+        cvr = (total_conversions / total_clicks * 100) if total_clicks > 0 else 0
+        roas = (total_revenue / total_cost) if total_cost > 0 else 0
+        avg_position = df['position'].mean() if 'position' in df.columns and len(df) > 0 else 0
+        cpm = (total_cost / total_impressions * 1000) if total_impressions > 0 else 0
+        
+        return {
+            'total_clicks': total_clicks,
+            'total_impressions': total_impressions,
+            'total_cost': total_cost,
+            'total_conversions': total_conversions,
+            'total_revenue': total_revenue,
+            'avg_cpc': avg_cpc,
+            'ctr': ctr,
+            'cvr': cvr,
+            'roas': roas,
+            'avg_position': avg_position,
+            'cpm': cpm
+        }
+    
+    def aggregate_time_series(df_hash, df):
+        if 'datetime' not in df.columns:
+            return pd.DataFrame()
+        return df.groupby('datetime').agg({
+            'clicks': 'sum',
+            'impressions': 'sum',
+            'cost': 'sum',
+            'conversions': 'sum'
+        }).reset_index().sort_values('datetime')
+    
+    def aggregate_keyword_performance(df_hash, df):
+        if 'matched_keyword' not in df.columns:
+            return pd.DataFrame()
+        keyword_agg = df.groupby('matched_keyword').agg({
+            'impressions': 'sum',
+            'clicks': 'sum',
+            'conversions': 'sum',
+            'cost': 'sum',
+            'revenue': 'sum'
+        }).reset_index()
+        keyword_agg['ctr'] = (keyword_agg['clicks'] / keyword_agg['impressions'].replace(0, 1) * 100).fillna(0)
+        keyword_agg['cvr'] = (keyword_agg['conversions'] / keyword_agg['clicks'].replace(0, 1) * 100).fillna(0)
+        keyword_agg['cpc'] = (keyword_agg['cost'] / keyword_agg['clicks'].replace(0, 1)).fillna(0)
+        return keyword_agg.sort_values('cost', ascending=False).head(20)
+    
+    def aggregate_daily_spend(df_hash, df):
+        if 'day' not in df.columns:
+            return pd.DataFrame(), 0.0
+        daily_spend = df.groupby('day').agg({'cost': 'sum'}).reset_index()
+        campaign_config = st.session_state.get('campaign_config', {})
+        daily_budget = float(campaign_config.get('daily_budget', 100.0))
+        return daily_spend, daily_budget
 
 def render_dashboard():
     """Renders the main dashboard with Google Ads-style interface."""

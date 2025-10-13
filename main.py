@@ -14,7 +14,13 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
 # Configure logging before importing any other modules
-from config.logging_config import setup_logging
+try:
+    from config.logging_config import setup_logging
+except ImportError:
+    # Fallback if logging_config not found
+    def setup_logging(debug_mode=False):
+        import logging
+        logging.basicConfig(level=logging.WARNING)
 
 # Enable debug mode via environment variable: DEBUG_MODE=true
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"

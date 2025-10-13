@@ -42,8 +42,11 @@ def run_simulation(config: Dict) -> pd.DataFrame:
     """
     
     # ========== MEMORY OPTIMIZATION ==========
-    from utils.memory_manager import MemoryManager
-    MemoryManager.cleanup_on_simulation_start()
+    try:
+        from utils.memory_manager import MemoryManager
+        MemoryManager.cleanup_on_simulation_start()
+    except ImportError:
+        pass  # Memory optimization not available
     
     # ========== INITIALIZATION ==========
     campaign_name = config.get('campaign', {}).get('name', 'default')
@@ -418,7 +421,11 @@ def run_simulation(config: Dict) -> pd.DataFrame:
         results_df['roas'] = (results_df['revenue'] / results_df['cost'].replace(0, 1)).fillna(0)
         
         # Optimize memory before returning
-        results_df = MemoryManager.cleanup_on_simulation_end(results_df)
+        try:
+            from utils.memory_manager import MemoryManager
+            results_df = MemoryManager.cleanup_on_simulation_end(results_df)
+        except ImportError:
+            pass  # Memory optimization not available
         
         return results_df
     else:
