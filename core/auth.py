@@ -206,7 +206,7 @@ class GoogleAuthManager:
         return st.session_state.user
     
     def _initialize_session_tracking(self, user_info: Dict[str, Any]):
-        """Initialize session tracking and Google Sheets logging"""
+        """Initialize session tracking and Google Sheets logging with IP capture"""
         try:
             # Create session tracker with trace ID
             session_tracker = SessionTracker()
@@ -217,6 +217,19 @@ class GoogleAuthManager:
             
             st.session_state.session_tracker = session_tracker
             st.session_state.session_id = session_tracker.session_id
+            
+            # Capture IP address and user agent
+            from utils.ip_utils import get_client_ip, get_user_agent, format_ip_for_logging
+            
+            ip_address = get_client_ip()
+            user_agent = get_user_agent()
+            
+            # Format IP for logging (handles IPv6 length)
+            ip_address = format_ip_for_logging(ip_address)
+            
+            # Store in session for later use
+            st.session_state.client_ip = ip_address
+            st.session_state.user_agent = user_agent
             
             # NEW: Initialize quota system with user context
             from app.quota_system import get_quota_manager
@@ -247,14 +260,26 @@ class GoogleAuthManager:
                 user_email = user_info.get("email")
                 closed_count = self.gsheet_logger_safe.close_orphaned_sessions(user_email)
                 
-                # Store user if new
-                self.gsheet_logger_safe.store_user_if_new(user_data)
+                # Store user if new (creates User ID)
+                is_new_user = self.gsheet_logger_safe.store_user_if_new(user_data)
                 
-                # Log session start with trace ID
+                # Update First Login and Last Login timestamps
+                self.gsheet_logger_safe.update_user_login_timestamps(
+                    email=user_email,
+                    is_first_login=is_new_user  # Only update First Login if new user
+                )
+                
+                # Get the 6-digit User ID for this user (now that we're sure they exist)
+                user_id_6digit = self.gsheet_logger_safe.get_user_id_by_email(user_email)
+                
+                # Log session start with 6-digit User ID, IP address, and user agent
                 self.gsheet_logger_safe.log_session_start(
                     email=user_email,
                     session_id=session_tracker.session_id,
-                    trace_id=trace_id
+                    trace_id=trace_id,
+                    user_id=user_id_6digit,  # FIXED: Use 6-digit ID from Users sheet
+                    ip_address=ip_address,    # NEW: IP address tracking
+                    user_agent=user_agent     # NEW: User agent tracking
                 )
             
         except Exception:
