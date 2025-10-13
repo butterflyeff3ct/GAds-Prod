@@ -3,7 +3,13 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
-from app.tracking_test_page import render_tracking_status
+from app.dashboard_cache import (
+    get_dataframe_hash,
+    calculate_dashboard_metrics,
+    aggregate_time_series,
+    aggregate_keyword_performance,
+    aggregate_daily_spend
+)
 
 def render_dashboard():
     """Renders the main dashboard with Google Ads-style interface."""
@@ -12,9 +18,6 @@ def render_dashboard():
 
     if df is None or df.empty:
         st.warning("📋 No campaign data available. Create and run a new campaign to see results.")
-        
-        # Add tracking status widget
-        render_tracking_status()
         
         col1, col2 = st.columns(2)
         with col1:
@@ -36,19 +39,23 @@ def render_dashboard():
     base_date = pd.Timestamp('2024-01-01')
     df['datetime'] = base_date + pd.to_timedelta(df['day'] - 1, unit='D') + pd.to_timedelta(df['hour'], unit='h')
     
-    # ========== CALCULATE METRICS ==========
-    total_clicks = int(df['clicks'].sum())
-    total_impressions = int(df['impressions'].sum())
-    total_cost = float(df['cost'].sum())
-    total_conversions = int(df['conversions'].sum())
-    total_revenue = float(df['revenue'].sum())
+    # ========== CALCULATE METRICS (CACHED) ==========
+    # Cache key based on DataFrame content - auto-invalidates when data changes
+    df_hash = get_dataframe_hash(df)
+    metrics = calculate_dashboard_metrics(df_hash, df)
     
-    avg_cpc = (total_cost / total_clicks) if total_clicks > 0 else 0
-    ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
-    cvr = (total_conversions / total_clicks * 100) if total_clicks > 0 else 0
-    roas = (total_revenue / total_cost) if total_cost > 0 else 0
-    avg_position = df['position'].mean() if 'position' in df.columns else 0
-    cpm = (total_cost / total_impressions * 1000) if total_impressions > 0 else 0
+    # Extract metrics
+    total_clicks = metrics['total_clicks']
+    total_impressions = metrics['total_impressions']
+    total_cost = metrics['total_cost']
+    total_conversions = metrics['total_conversions']
+    total_revenue = metrics['total_revenue']
+    avg_cpc = metrics['avg_cpc']
+    ctr = metrics['ctr']
+    cvr = metrics['cvr']
+    roas = metrics['roas']
+    avg_position = metrics['avg_position']
+    cpm = metrics['cpm']
     
     # ========== HEADER ==========
     col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
@@ -67,8 +74,7 @@ def render_dashboard():
         else:
             st.info("📚 Mock")
     with col4:
-        # Add tracking status widget
-        render_tracking_status()
+        st.info("🎯 Active")
 
     # ========== GOOGLE ADS STYLE METRIC CARDS ==========
     # Initialize selected metrics if not exists
@@ -155,13 +161,8 @@ def render_dashboard():
     # ========== MULTI-LINE PERFORMANCE CHART ==========
     st.subheader("Performance Over Time")
     
-    # Aggregate by datetime
-    time_series = df.groupby('datetime').agg({
-        'clicks': 'sum',
-        'impressions': 'sum',
-        'cost': 'sum',
-        'conversions': 'sum'
-    }).reset_index().sort_values('datetime')
+    # Aggregate by datetime (CACHED)
+    time_series = aggregate_time_series(df_hash, df)
     
     # Create multi-line chart
     fig = go.Figure()
@@ -187,36 +188,55 @@ def render_dashboard():
             fig.add_trace(go.Scatter(
                 x=time_series['datetime'],
                 y=time_series[col_name],
-                mode='lines',
+                mode='lines+markers',
                 name=metric_name,
-                line=dict(color=color, width=2),
-                hovertemplate=f'{metric_name}: %{{y}}<extra></extra>'
+                line=dict(color=color, width=3),
+                marker=dict(size=6, color=color, symbol='circle'),
+                hovertemplate=f'<b>{metric_name}</b><br>%{{x|%b %d, %H:%M}}<br>Value: %{{y:,.0f}}<extra></extra>'
             ))
     
     fig.update_layout(
         height=400,
-        margin=dict(l=20, r=20, t=20, b=40),
+        margin=dict(l=60, r=20, t=20, b=80),
         hovermode='x unified',
         showlegend=True,
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=-0.2,
+            y=-0.25,
             xanchor="center",
-            x=0.5
+            x=0.5,
+            font=dict(size=14, color='#333333'),
+            bgcolor='rgba(255,255,255,0.9)',
+            bordercolor='#CCCCCC',
+            borderwidth=1
         ),
         xaxis=dict(
             showgrid=True,
-            gridcolor='rgba(200,200,200,0.2)',
-            zeroline=False
+            gridcolor='rgba(200,200,200,0.3)',
+            gridwidth=1,
+            zeroline=False,
+            title=dict(text='Date', font=dict(size=14, color='#333333', family='Arial, sans-serif')),
+            tickfont=dict(size=12, color='#333333', family='Arial, sans-serif'),
+            tickangle=-45,
+            showline=True,
+            linewidth=2,
+            linecolor='#CCCCCC'
         ),
         yaxis=dict(
             showgrid=True,
-            gridcolor='rgba(200,200,200,0.2)',
-            zeroline=False
+            gridcolor='rgba(200,200,200,0.3)',
+            gridwidth=1,
+            zeroline=False,
+            title=dict(text='Value', font=dict(size=14, color='#333333', family='Arial, sans-serif')),
+            tickfont=dict(size=12, color='#333333', family='Arial, sans-serif'),
+            showline=True,
+            linewidth=2,
+            linecolor='#CCCCCC'
         ),
-        plot_bgcolor='white',
-        paper_bgcolor='white'
+        plot_bgcolor='#FAFAFA',
+        paper_bgcolor='white',
+        font=dict(family='Arial, sans-serif', size=12, color='#333333')
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -246,19 +266,8 @@ def render_dashboard():
     
     with tab2:
         if 'matched_keyword' in df.columns:
-            keyword_agg = df.groupby('matched_keyword').agg({
-                'impressions': 'sum',
-                'clicks': 'sum',
-                'conversions': 'sum',
-                'cost': 'sum',
-                'revenue': 'sum'
-            }).reset_index()
-            
-            keyword_agg['ctr'] = (keyword_agg['clicks'] / keyword_agg['impressions'] * 100).fillna(0)
-            keyword_agg['cvr'] = (keyword_agg['conversions'] / keyword_agg['clicks'] * 100).fillna(0)
-            keyword_agg['cpc'] = (keyword_agg['cost'] / keyword_agg['clicks']).fillna(0)
-            
-            keyword_agg = keyword_agg.sort_values('cost', ascending=False).head(20)
+            # Get keyword performance (CACHED)
+            keyword_agg = aggregate_keyword_performance(df_hash, df)
             
             st.dataframe(
                 keyword_agg,
@@ -304,14 +313,42 @@ def render_dashboard():
                 ])
                 
                 fig_qs.update_layout(
-                    title="Quality Score Distribution",
-                    xaxis_title="Quality Score",
-                    yaxis_title="Count",
+                    title=dict(
+                        text="Quality Score Distribution",
+                        font=dict(size=16, color='#333333', family='Arial, sans-serif')
+                    ),
+                    xaxis_title=dict(
+                        text="Quality Score",
+                        font=dict(size=14, color='#333333', family='Arial, sans-serif')
+                    ),
+                    yaxis_title=dict(
+                        text="Count",
+                        font=dict(size=14, color='#333333', family='Arial, sans-serif')
+                    ),
                     height=250,
-                    plot_bgcolor='white',
+                    plot_bgcolor='#FAFAFA',
                     paper_bgcolor='white',
-                    xaxis=dict(tickmode='linear', tick0=1, dtick=1),
-                    margin=dict(l=20, r=20, t=40, b=20)
+                    xaxis=dict(
+                        tickmode='linear',
+                        tick0=1,
+                        dtick=1,
+                        tickfont=dict(size=12, color='#333333'),
+                        showgrid=True,
+                        gridcolor='rgba(200,200,200,0.3)',
+                        showline=True,
+                        linewidth=2,
+                        linecolor='#CCCCCC'
+                    ),
+                    yaxis=dict(
+                        tickfont=dict(size=12, color='#333333'),
+                        showgrid=True,
+                        gridcolor='rgba(200,200,200,0.3)',
+                        showline=True,
+                        linewidth=2,
+                        linecolor='#CCCCCC'
+                    ),
+                    margin=dict(l=50, r=20, t=50, b=40),
+                    font=dict(family='Arial, sans-serif', size=12, color='#333333')
                 )
                 
                 st.plotly_chart(fig_qs, use_container_width=True)
@@ -319,10 +356,8 @@ def render_dashboard():
             st.info("Quality Score data not available")
     
     with tab4:
-        daily_spend = df.groupby('day').agg({'cost': 'sum'}).reset_index()
-        
-        campaign_config = st.session_state.get('campaign_config', {})
-        daily_budget = campaign_config.get('daily_budget', 100.0)
+        # Get daily spend (CACHED)
+        daily_spend, daily_budget = aggregate_daily_spend(df_hash, df)
         
         fig_budget = go.Figure()
         
@@ -341,14 +376,47 @@ def render_dashboard():
         ))
         
         fig_budget.update_layout(
-            xaxis_title="Day",
-            yaxis_title="Spend ($)",
+            xaxis_title=dict(
+                text="Day",
+                font=dict(size=14, color='#333333', family='Arial, sans-serif')
+            ),
+            yaxis_title=dict(
+                text="Spend ($)",
+                font=dict(size=14, color='#333333', family='Arial, sans-serif')
+            ),
             height=300,
-            plot_bgcolor='white',
+            plot_bgcolor='#FAFAFA',
             paper_bgcolor='white',
             showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(l=20, r=20, t=20, b=40)
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(size=12, color='#333333'),
+                bgcolor='rgba(255,255,255,0.9)',
+                bordercolor='#CCCCCC',
+                borderwidth=1
+            ),
+            xaxis=dict(
+                tickfont=dict(size=12, color='#333333'),
+                showgrid=True,
+                gridcolor='rgba(200,200,200,0.3)',
+                showline=True,
+                linewidth=2,
+                linecolor='#CCCCCC'
+            ),
+            yaxis=dict(
+                tickfont=dict(size=12, color='#333333'),
+                showgrid=True,
+                gridcolor='rgba(200,200,200,0.3)',
+                showline=True,
+                linewidth=2,
+                linecolor='#CCCCCC'
+            ),
+            margin=dict(l=60, r=20, t=20, b=50),
+            font=dict(family='Arial, sans-serif', size=12, color='#333333')
         )
         
         st.plotly_chart(fig_budget, use_container_width=True)

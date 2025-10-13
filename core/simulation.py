@@ -41,6 +41,10 @@ def run_simulation(config: Dict) -> pd.DataFrame:
     - Ad extensions CTR impact
     """
     
+    # ========== MEMORY OPTIMIZATION ==========
+    from utils.memory_manager import MemoryManager
+    MemoryManager.cleanup_on_simulation_start()
+    
     # ========== INITIALIZATION ==========
     campaign_name = config.get('campaign', {}).get('name', 'default')
     deterministic_seed = get_deterministic_seed(config)
@@ -408,10 +412,13 @@ def run_simulation(config: Dict) -> pd.DataFrame:
     if all_results:
         results_df = pd.DataFrame(all_results)
         
-        # Add calculated metrics
-        results_df['ctr'] = (results_df['clicks'] / results_df['impressions'] * 100).fillna(0)
-        results_df['cvr'] = (results_df['conversions'] / results_df['clicks'] * 100).fillna(0)
-        results_df['roas'] = (results_df['revenue'] / results_df['cost']).fillna(0)
+        # Add calculated metrics (vectorized for performance)
+        results_df['ctr'] = (results_df['clicks'] / results_df['impressions'].replace(0, 1) * 100).fillna(0)
+        results_df['cvr'] = (results_df['conversions'] / results_df['clicks'].replace(0, 1) * 100).fillna(0)
+        results_df['roas'] = (results_df['revenue'] / results_df['cost'].replace(0, 1)).fillna(0)
+        
+        # Optimize memory before returning
+        results_df = MemoryManager.cleanup_on_simulation_end(results_df)
         
         return results_df
     else:

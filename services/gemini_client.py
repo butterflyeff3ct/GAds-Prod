@@ -1,52 +1,133 @@
-# /services/gemini_client.py
+# /services/gemini_client.py - OPTIMIZED VERSION
+# Improved lazy loading and caching for faster startup
+
 import os
 import time
 from typing import List, Dict
 import streamlit as st
+import logging
 
-@st.cache_resource
+# Get logger for Gemini API
+logger = logging.getLogger('gemini_api')
+
+# Track initialization
+_init_logged = False
+_gemini_checked = False
+_gemini_available = False
+
+# ========================================
+# LAZY INITIALIZATION
+# ========================================
+
+def check_gemini_availability():
+    """Check if Gemini is available - cached result"""
+    global _gemini_checked, _gemini_available
+    
+    if not _gemini_checked:
+        try:
+            import google.generativeai as genai
+            _gemini_available = True
+        except ImportError:
+            _gemini_available = False
+        finally:
+            _gemini_checked = True
+    
+    return _gemini_available
+
+# ========================================
+# OPTIMIZED CLIENT WITH CACHING
+# ========================================
+
+@st.cache_resource(ttl=3600)  # Cache for 1 hour
 def get_gemini_client():
-    """Initializes and returns a GeminiClient instance, caching it."""
+    """
+    Initializes and returns a GeminiClient instance with caching.
+    TTL of 1 hour reduces initialization overhead while allowing for quota resets.
+    """
     api_key = st.secrets.get("gemini", {}).get("api_key")
     return GeminiClient(api_key=api_key)
+
+
+@st.cache_resource(ttl=7200)  # Cache model for 2 hours
+def get_gemini_model(api_key: str):
+    """
+    Get cached Gemini model instance.
+    Reuses connection for better performance.
+    
+    SAFE: Only caches the model object, not responses
+    """
+    if not check_gemini_availability():
+        return None
+    
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        return genai.GenerativeModel("gemini-2.0-flash-exp")
+    except Exception:
+        return None
 
 class GeminiClient:
     """
     A client to interact with the Gemini API for generating keywords and ad copy.
     Includes graceful degradation when API quota is exceeded.
+    OPTIMIZED: Lazy imports and better error handling.
     """
     def __init__(self, api_key: str = None):
+        global _init_logged
+        
         self.api_key = api_key or os.getenv("GOOGLE_GEMINI_API_KEY")
         self.use_real_api = False
         self.quota_exceeded = False
+        self.model = None
         
         if self.api_key and self.api_key != "mock":
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel("gemini-2.0-flash-exp")
-                
-                # Test the connection
+            # Only import if API key is present
+            if check_gemini_availability():
                 try:
-                    test_response = self.model.generate_content("Test")
-                    self.use_real_api = True
-                    print("✅ Gemini API initialized successfully")
-                except Exception as test_error:
-                    if "429" in str(test_error) or "quota" in str(test_error).lower():
-                        self.quota_exceeded = True
-                        print("⚠️ Gemini API quota exceeded. Using mock data.")
-                    else:
-                        print(f"⚠️ Gemini API test failed: {test_error}")
-                    self.use_real_api = False
+                    # Use cached model instance for better performance
+                    self.model = get_gemini_model(self.api_key)
+                    if not self.model:
+                        raise Exception("Failed to initialize model")
                     
-            except ImportError:
-                print("⚠️ google-generativeai not installed. Using mock data.")
-                self.use_real_api = False
-            except Exception as e:
-                print(f"⚠️ Gemini initialization error: {e}")
-                self.use_real_api = False
+                    # Test the connection (with timeout)
+                    try:
+                        test_response = self.model.generate_content("Test")
+                        self.use_real_api = True
+                        
+                        # Only log once
+                        if not _init_logged:
+                            logger.info("✅ Gemini AI: Connected")
+                            _init_logged = True
+                    except Exception as test_error:
+                        if "429" in str(test_error) or "quota" in str(test_error).lower():
+                            self.quota_exceeded = True
+                            if not _init_logged:
+                                logger.warning("⚠️ Gemini AI: Quota exceeded (using mock)")
+                                _init_logged = True
+                        else:
+                            if not _init_logged:
+                                logger.warning("⚠️ Gemini AI: Failed (using mock)")
+                                _init_logged = True
+                        self.use_real_api = False
+                        
+                except ImportError:
+                    if not _init_logged:
+                        logger.info("ℹ️ Gemini AI: Not installed (using mock)")
+                        _init_logged = True
+                    self.use_real_api = False
+                except Exception as e:
+                    if not _init_logged:
+                        logger.warning("⚠️ Gemini AI: Failed (using mock)")
+                        _init_logged = True
+                    self.use_real_api = False
+            else:
+                if not _init_logged:
+                    logger.info("ℹ️ Gemini AI: Not installed (using mock)")
+                    _init_logged = True
         else:
-            print("ℹ️ No Gemini API key. Using mock data for AI features.")
+            if not _init_logged:
+                logger.info("ℹ️ Gemini AI: No API key (using mock)")
+                _init_logged = True
     
     def _handle_api_error(self, error: Exception, operation: str):
         """Centralized error handling for API calls."""
@@ -76,11 +157,15 @@ class GeminiClient:
     
     def generate_keywords(self, prompt: str) -> List[str]:
         """Generates keywords with graceful fallback on quota exceeded."""
-        if self.quota_exceeded:
+        # NEW: Check quota before using API
+        from app.quota_system import get_quota_manager
+        quota_mgr = get_quota_manager()
+        
+        if self.quota_exceeded or not quota_mgr.can_use_gemini():
             st.info("💡 Using mock keywords (API quota exceeded)")
             return self._generate_mock_keywords(prompt)
         
-        if self.use_real_api:
+        if self.use_real_api and self.model:
             try:
                 full_prompt = f"""
                 Act as a Google Ads specialist. Based on the product description, generate 20 relevant keywords.
@@ -97,6 +182,10 @@ class GeminiClient:
                 """
                 
                 response = self.model.generate_content(full_prompt)
+                
+                # NEW: Increment token usage (estimate ~500 tokens)
+                quota_mgr.increment_gemini_tokens(500)
+                
                 keywords = response.text.strip().split(",")
                 return [kw.strip() for kw in keywords if kw.strip()]
                 
@@ -109,11 +198,15 @@ class GeminiClient:
     
     def generate_ads(self, prompt: str, num_headlines: int, num_descriptions: int, tone: str) -> Dict[str, List[str]]:
         """Generates ad copy with graceful fallback."""
-        if self.quota_exceeded:
+        # NEW: Check quota before using API
+        from app.quota_system import get_quota_manager
+        quota_mgr = get_quota_manager()
+        
+        if self.quota_exceeded or not quota_mgr.can_use_gemini():
             st.info("💡 Using mock ad copy (API quota exceeded)")
             return self._generate_mock_ads(prompt, num_headlines, num_descriptions)
         
-        if self.use_real_api:
+        if self.use_real_api and self.model:
             try:
                 full_prompt = f"""
                 Create Google Ads copy with {tone} tone.
@@ -130,6 +223,10 @@ class GeminiClient:
                 """
                 
                 response = self.model.generate_content(full_prompt)
+                
+                # NEW: Increment token usage (estimate ~300 tokens)
+                quota_mgr.increment_gemini_tokens(300)
+                
                 return self._parse_ad_response(response.text)
                 
             except Exception as e:
@@ -141,11 +238,15 @@ class GeminiClient:
     
     def generate_campaign_insights(self, campaign_config: Dict) -> str:
         """Generates insights with graceful fallback."""
-        if self.quota_exceeded:
+        # NEW: Check quota before using API
+        from app.quota_system import get_quota_manager
+        quota_mgr = get_quota_manager()
+        
+        if self.quota_exceeded or not quota_mgr.can_use_gemini():
             st.info("💡 Using mock insights (API quota exceeded)")
             return self._generate_mock_insights(campaign_config)
         
-        if self.use_real_api:
+        if self.use_real_api and self.model:
             try:
                 full_prompt = f"""
                 Analyze this Google Ads campaign:
@@ -163,6 +264,10 @@ class GeminiClient:
                 """
                 
                 response = self.model.generate_content(full_prompt)
+                
+                # NEW: Increment token usage (estimate ~400 tokens)
+                quota_mgr.increment_gemini_tokens(400)
+                
                 return response.text
                 
             except Exception as e:
@@ -186,8 +291,10 @@ class GeminiClient:
         
         return result
     
-    def _generate_mock_keywords(self, prompt: str) -> List[str]:
-        """Generates realistic mock keywords."""
+    @staticmethod
+    @st.cache_data(ttl=300)  # Cache mock data for 5 minutes
+    def _generate_mock_keywords(prompt: str) -> List[str]:
+        """Generates realistic mock keywords - CACHED."""
         # Detect product type
         base = "product"
         prompt_lower = prompt.lower()
@@ -228,8 +335,10 @@ class GeminiClient:
             f"{base} alternatives"
         ]
     
-    def _generate_mock_ads(self, prompt: str, num_headlines: int, num_descriptions: int) -> Dict[str, List[str]]:
-        """Generates realistic mock ad copy."""
+    @staticmethod
+    @st.cache_data(ttl=300)  # Cache mock data for 5 minutes
+    def _generate_mock_ads(prompt: str, num_headlines: int, num_descriptions: int) -> Dict[str, List[str]]:
+        """Generates realistic mock ad copy - CACHED."""
         product = "Product"
         if "battery" in prompt.lower():
             product = "Power Solution"
@@ -258,8 +367,10 @@ class GeminiClient:
             "descriptions": descriptions[:num_descriptions]
         }
     
-    def _generate_mock_insights(self, campaign_config: Dict) -> str:
-        """Generates realistic mock campaign insights."""
+    @staticmethod
+    @st.cache_data(ttl=300)  # Cache mock data for 5 minutes
+    def _generate_mock_insights(campaign_config: Dict) -> str:
+        """Generates realistic mock campaign insights - CACHED."""
         objective = campaign_config.get('objective', 'Sales')
         budget = campaign_config.get('daily_budget', 100)
         

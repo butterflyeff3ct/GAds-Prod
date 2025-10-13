@@ -1,5 +1,9 @@
-# requirements.txt
-# --- Core Libraries ---
+# requirements.txt - OPTIMIZED VERSION
+# Core dependencies are required, ML dependencies are optional for faster loading
+
+# ========================================
+# CORE LIBRARIES (Required)
+# ========================================
 streamlit>=1.30.0
 pandas>=2.0.0
 numpy>=1.24.0
@@ -8,25 +12,46 @@ pyyaml>=6.0
 beautifulsoup4>=4.12.0
 requests>=2.31.0
 
-# --- Visualization Libraries ---
+# ========================================
+# VISUALIZATION LIBRARIES (Required)
+# ========================================
 plotly>=5.15.0
 plotly-express>=0.4.1
 
-# --- Google OAuth 2.0 & Authentication (NOT Google+) ---
+# ========================================
+# GOOGLE OAUTH & AUTHENTICATION (Required)
+# ========================================
 google-auth>=2.27.0
 google-auth-oauthlib>=1.2.0
 google-auth-httplib2>=0.2.0
 
-# --- Google Ads & AI Services ---
+# ========================================
+# GOOGLE ADS & AI SERVICES (Required)
+# ========================================
 google-ads>=24.1.0
 google-generativeai>=0.3.0
 
-# --- Google Sheets Integration ---
+# ========================================
+# GOOGLE SHEETS INTEGRATION (Required)
+# ========================================
 gspread>=5.12.0
 oauth2client>=4.1.3
 
-# --- Advanced Feature Libraries (Optional) ---
-lightgbm>=4.0.0
-scikit-learn>=1.3.0
-keybert>=0.8.0
-sentence-transformers>=2.2.0
+# ========================================
+# OPTIONAL ML LIBRARIES (Uncomment if needed)
+# ========================================
+# These are HEAVY libraries that significantly slow down startup time.
+# Only install if you're using ML bidding features.
+#
+# To enable ML features:
+# 1. Uncomment the lines below
+# 2. Run: pip install -r requirements.txt
+# 3. Set "Use ML Bidding" to True in the app
+#
+# lightgbm>=4.0.0           # ~50MB, used for ML bid optimization
+# scikit-learn>=1.3.0       # ~30MB, used for ML features
+# keybert>=0.8.0            # ~10MB, used for keyword extraction
+# sentence-transformers>=2.2.0  # ~1.5GB, used for semantic analysis
+#
+# ⚠️ WARNING: sentence-transformers downloads large models on first use
+# This can add 2-5 seconds to startup time

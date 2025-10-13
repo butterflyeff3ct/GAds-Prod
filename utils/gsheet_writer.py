@@ -1,7 +1,5 @@
-"""Google Sheets Integration for User Tracking and Session Logging
-Updated Schema with Rate Limiting, Caching, and Production-Ready Error Handling
-- Users Tab: Email | First Name | Last Name | First Login | Profile Pic | Locale | User ID (6-digit auto-generated)
-- Activity Tab: Email | Session ID | Trace ID | Login Time | Logout Time | Tokens Used | Operations | Duration (mm:ss) | Status
+"""Google Sheets Integration - Minimal Logging Version
+Only logs initialization status and critical errors.
 """
 import gspread
 import streamlit as st
@@ -12,22 +10,28 @@ from typing import Optional, Dict, Any
 import time
 import os
 import random
+import logging
+
+# Get logger for Google Sheets operations
+logger = logging.getLogger('google_sheets_api')
+
+# Track if we've already logged initialization
+_init_logged = False
 
 
 class GSheetLogger:
-    """Handles Google Sheets logging for users and activity tracking with rate limiting"""
+    """Handles Google Sheets logging with minimal console output"""
     
     def __init__(self, sheet_id: Optional[str] = None, show_warnings: bool = True):
-        """Initialize Google Sheets client with caching and production-ready error handling"""
+        """Initialize Google Sheets client"""
+        global _init_logged
+        
         try:
-            # Detect environment
             self.is_production = self._is_production_environment()
             
-            # Get configuration from Streamlit secrets
             try:
                 gsheet_config = st.secrets.get("google_sheets", {})
-            except Exception as e:
-                # Secrets not available - disable logging gracefully
+            except Exception:
                 if show_warnings and self.is_production:
                     self._show_config_warning()
                 self.enabled = False
@@ -36,143 +40,144 @@ class GSheetLogger:
             self.sheet_id = sheet_id or gsheet_config.get("sheet_id")
             
             if not self.sheet_id:
-                # Only show warning in production if explicitly requested
                 if show_warnings and self.is_production:
                     self._show_config_warning()
                 self.enabled = False
                 return
             
-            # Rate limiting - track last request time
             self._last_request_time = 0
-            self._min_request_interval = 2.0  # Minimum 2 seconds between requests
-            
-            # Cache for read operations
+            self._min_request_interval = 2.0
             self._user_cache = {}
-            self._cache_ttl = 300  # 5 minutes cache
+            self._cache_ttl = 300
             self._cache_timestamp = 0
             
-            # Set up Google Sheets client
             scope = [
                 "https://spreadsheets.google.com/feeds",
                 "https://www.googleapis.com/auth/drive"
             ]
             
-            # Use credentials from secrets
             credentials_info = gsheet_config.get("credentials")
             if not credentials_info:
-                # Only show warning in production if explicitly requested
                 if show_warnings and self.is_production:
                     self._show_config_warning()
                 self.enabled = False
                 return
             
-            # Create credentials from dictionary
             from oauth2client.service_account import ServiceAccountCredentials
             credentials = ServiceAccountCredentials.from_json_keyfile_dict(
                 credentials_info, scope
             )
             
             self.client = gspread.authorize(credentials)
-            
-            # Use cached worksheet access
             self._init_worksheets()
-            
             self.enabled = True
-            print("[DEBUG] GSheetLogger initialized successfully")
+            
+            # Only log once
+            if not _init_logged:
+                logger.info("✅ Google Sheets API: Connected")
+                _init_logged = True
             
         except Exception as e:
             error_msg = str(e)
-            print(f"[DEBUG] GSheetLogger initialization failed: {error_msg}")
             
-            # Only show errors in production with specific guidance
+            # Only log critical errors once
+            if not _init_logged and ("429" in error_msg or "Quota exceeded" in error_msg):
+                logger.error(f"❌ Google Sheets API: Quota exceeded")
+                _init_logged = True
+            elif not _init_logged:
+                logger.error(f"❌ Google Sheets API: Failed")
+                _init_logged = True
+            
             if show_warnings and self.is_production:
                 if "credentials" in error_msg.lower() or "authentication" in error_msg.lower():
                     self._show_config_warning()
-                else:
-                    st.error(f"❌ Google Sheets initialization failed: {error_msg}")
             
             self.enabled = False
     
     def _is_production_environment(self) -> bool:
-        """Detect if running on Streamlit Cloud (production)"""
-        # Check multiple indicators of Streamlit Cloud environment
+        """Detect if running on Streamlit Cloud"""
         indicators = [
             "streamlit.app" in os.getenv("HOSTNAME", ""),
             os.getenv("STREAMLIT_SHARING_MODE") == "true",
             "/mount/src" in os.getcwd(),
             "streamlit-cloud" in os.getenv("HOME", "").lower(),
-            os.path.exists("/mount/src")  # Streamlit Cloud specific mount
+            os.path.exists("/mount/src")
         ]
-        is_prod = any(indicators)
-        print(f"[DEBUG] Environment: {'Production (Streamlit Cloud)' if is_prod else 'Local Development'}")
-        return is_prod
+        return any(indicators)
     
     def _show_config_warning(self):
-        """Show user-friendly configuration warning for production"""
+        """Show config warning for production"""
         st.warning("""
         ⚠️ **Google Sheets Logging Not Configured**
         
         To enable user tracking in production:
         1. Go to your Streamlit Cloud dashboard
         2. Click on your app → Settings → Secrets
-        3. Add your Google Sheets configuration (see DEPLOYMENT_GUIDE.md)
-        
-        **User data will NOT be logged until this is configured.**
+        3. Add your Google Sheets configuration
         """)
     
     def _rate_limit(self):
-        """Enforce rate limiting between API calls"""
+        """Enforce rate limiting"""
         current_time = time.time()
         time_since_last = current_time - self._last_request_time
         
         if time_since_last < self._min_request_interval:
-            sleep_time = self._min_request_interval - time_since_last
-            time.sleep(sleep_time)
+            time.sleep(self._min_request_interval - time_since_last)
         
         self._last_request_time = time.time()
     
     def _init_worksheets(self):
-        """Initialize worksheets with caching - only called once"""
-        # This is called only during __init__, not on every operation
+        """Initialize worksheets"""
         try:
             self.sheet = self.client.open_by_key(self.sheet_id)
-            print(f"[DEBUG] Successfully opened Google Sheet: {self.sheet_id}")
             
-            # Get or create Users worksheet
             try:
                 self.users_worksheet = self.sheet.worksheet("Users")
-                print("[DEBUG] Found existing Users worksheet")
             except gspread.WorksheetNotFound:
                 self._rate_limit()
-                self.users_worksheet = self.sheet.add_worksheet(
-                    title="Users", rows=1000, cols=7
-                )
+                self.users_worksheet = self.sheet.add_worksheet(title="Users", rows=1000, cols=7)
                 self.users_worksheet.append_row([
                     "Email", "First Name", "Last Name", "First Login", 
                     "Profile Pic", "Locale", "User ID"
                 ])
-                print("[DEBUG] Created new Users worksheet")
             
-            # Get or create Activity worksheet
             try:
                 self.activity_worksheet = self.sheet.worksheet("Activity")
-                print("[DEBUG] Found existing Activity worksheet")
             except gspread.WorksheetNotFound:
                 self._rate_limit()
-                self.activity_worksheet = self.sheet.add_worksheet(
-                    title="Activity", rows=10000, cols=9
-                )
+                self.activity_worksheet = self.sheet.add_worksheet(title="Activity", rows=10000, cols=9)
                 self.activity_worksheet.append_row([
                     "Email", "Session ID", "Trace ID", "Login Time", 
                     "Logout Time", "Tokens Used", "Operations", "Duration", "Status"
                 ])
-                print("[DEBUG] Created new Activity worksheet")
+            
+            # NEW: Initialize Quota worksheet
+            try:
+                self.quota_worksheet = self.sheet.worksheet("Quotas")
+            except gspread.WorksheetNotFound:
+                self._rate_limit()
+                self.quota_worksheet = self.sheet.add_worksheet(title="Quotas", rows=1000, cols=8)
+                self.quota_worksheet.append_row([
+                    "Email", "Session ID", "Gemini Tokens", "Google Ads Ops",
+                    "Last Updated", "Gemini Limit", "Ads Limit", "Status"
+                ])
         except Exception as e:
-            print(f"[DEBUG] Failed to initialize worksheets: {e}")
             raise Exception(f"Failed to initialize worksheets: {e}")
+        
+        # Get or create Gemini Usage worksheet for user-specific tracking
+        try:
+            self.gemini_usage_worksheet = self.sheet.worksheet("Gemini Usage")
+        except gspread.WorksheetNotFound:
+            self._rate_limit()
+            self.gemini_usage_worksheet = self.sheet.add_worksheet(
+                title="Gemini Usage", rows=10000, cols=6
+            )
+            self.gemini_usage_worksheet.append_row([
+                "User ID", "Session ID", "Operation Type", "Tokens Used", "Timestamp", "Status"
+            ])
     
     def _get_timestamp(self) -> str:
-        """Get current timestamp in EST/EDT"""
+        """Get current timestamp in EST"""
         try:
             est_tz = ZoneInfo("America/New_York")
             return datetime.now(est_tz).strftime("%Y-%m-%d %H:%M:%S")
@@ -182,72 +187,50 @@ class GSheetLogger:
             return datetime.now(timezone(est_offset)).strftime("%Y-%m-%d %H:%M:%S")
     
     def _format_duration(self, duration_ms: int) -> str:
-        """Convert duration from milliseconds to mm:ss format"""
+        """Convert duration from ms to mm:ss"""
         if duration_ms <= 0:
             return "00:00"
-        
         total_seconds = duration_ms // 1000
         minutes = total_seconds // 60
         seconds = total_seconds % 60
-        
         return f"{minutes:02d}:{seconds:02d}"
     
     def _generate_user_id(self) -> str:
-        """Generate a unique 6-digit user ID"""
-        user_id = str(random.randint(100000, 999999))
-        print(f"[DEBUG] Generated 6-digit User ID: {user_id}")
-        return user_id
+        """Generate 6-digit user ID"""
+        return str(random.randint(100000, 999999))
     
     def _check_user_exists_cached(self, email: str) -> bool:
-        """Check if user exists using cache to avoid API calls"""
-        # Check cache first
+        """Check if user exists using cache"""
         current_time = time.time()
         if email in self._user_cache:
-            print(f"[DEBUG] User {email} found in cache")
             return True
         
-        # Only refresh cache if expired
         if current_time - self._cache_timestamp > self._cache_ttl:
             try:
                 self._rate_limit()
                 email_column = self.users_worksheet.col_values(1)
-                existing_emails = email_column[1:]  # Skip header
-                
-                # Update cache
+                existing_emails = email_column[1:]
                 self._user_cache = {e: True for e in existing_emails}
                 self._cache_timestamp = current_time
-                print(f"[DEBUG] Cache refreshed with {len(existing_emails)} users")
-            except Exception as e:
-                # If read fails, assume user doesn't exist to try writing
-                print(f"[DEBUG] Cache refresh failed: {e}")
+            except Exception:
                 return False
         
         return email in self._user_cache
     
     def store_user_if_new(self, user_data: Dict[str, Any]) -> bool:
-        """Store user data if email doesn't already exist
-        Schema: Email | First Name | Last Name | First Login | Profile Pic | Locale | User ID (6-digit)
-        """
+        """Store user data if email doesn't exist - NO LOGGING"""
         if not self.enabled:
-            print("[DEBUG] GSheetLogger not enabled - skipping user storage")
             return False
         
         try:
             email = user_data["email"]
-            print(f"[DEBUG] Attempting to store user: {email}")
             
-            # Check cache first to avoid API call
             if self._check_user_exists_cached(email):
-                print(f"[DEBUG] User {email} already exists - skipping")
                 return False
             
-            # Generate 6-digit user ID
             user_id = self._generate_user_id()
-            
-            # Rate limit before write
             self._rate_limit()
             
-            # Add new user
             row_data = [
                 user_data["email"],
                 user_data.get("first_name", ""),
@@ -258,98 +241,47 @@ class GSheetLogger:
                 user_id
             ]
             
-            print(f"[DEBUG] Writing to Users sheet: {row_data}")
             self.users_worksheet.append_row(row_data)
-            
-            print(f"[DEBUG] ✅ Successfully added user {email} with ID {user_id}")
-            
-            # Update cache
             self._user_cache[email] = True
-            
             return True
             
         except Exception as e:
-            error_msg = str(e)
-            print(f"[DEBUG] ❌ Error storing user: {error_msg}")
-            
-            if "429" in error_msg or "Quota exceeded" in error_msg:
-                if self.is_production:
-                    st.warning("⚠️ Rate limit reached. User data will be logged on next session.")
-            else:
-                if self.is_production:
-                    st.error(f"❌ Failed to store user data: {e}")
+            if "429" in str(e) and self.is_production:
+                st.warning("⚠️ Rate limit reached")
             return False
     
     def log_session_start(self, email: str, session_id: str, 
                          trace_id: str = "", login_time: Optional[str] = None) -> bool:
-        """Log session start in Activity sheet
-        Schema: Email | Session ID | Trace ID | Login Time | Logout Time | Tokens Used | Operations | Duration (mm:ss) | Status
-        """
+        """Log session start - NO LOGGING"""
         if not self.enabled:
-            print("[DEBUG] GSheetLogger not enabled - skipping session start logging")
             return False
         
         try:
             if login_time is None:
                 login_time = self._get_timestamp()
             
-            print(f"[DEBUG] Logging session start for {email}, session: {session_id}")
-            
-            # Rate limit before write
             self._rate_limit()
             
-            row_data = [
-                email,
-                session_id,
-                trace_id,
-                login_time,
-                "",
-                "",
-                "",
-                "",
-                "started"
-            ]
-            
-            print(f"[DEBUG] Writing to Activity sheet: {row_data}")
+            row_data = [email, session_id, trace_id, login_time, "", "", "", "", "started"]
             self.activity_worksheet.append_row(row_data)
-            
-            print(f"[DEBUG] ✅ Successfully logged session start for {email}")
-            
             return True
             
-        except Exception as e:
-            error_msg = str(e)
-            print(f"[DEBUG] ❌ Error logging session start: {error_msg}")
-            
-            if "429" in error_msg or "Quota exceeded" in error_msg:
-                if self.is_production:
-                    st.warning("⚠️ Rate limit reached. Session will be logged on next operation.")
-            else:
-                if self.is_production:
-                    st.error(f"❌ Failed to log session start: {e}")
+        except Exception:
             return False
     
     def log_session_end(self, email: str, session_id: str, 
                        logout_time: Optional[str] = None,
                        tokens_used: int = 0, operations: int = 0, 
                        duration_ms: int = 0, status: str = "completed") -> bool:
-        """Update session end data in Activity sheet
-        Schema: Email | Session ID | Trace ID | Login Time | Logout Time | Tokens Used | Operations | Duration (mm:ss) | Status
-        """
+        """Update session end data - NO LOGGING"""
         if not self.enabled:
-            print("[DEBUG] GSheetLogger not enabled - skipping session end logging")
             return False
         
         try:
             if logout_time is None:
                 logout_time = self._get_timestamp()
             
-            print(f"[DEBUG] Logging session end for {email}, session: {session_id}, status: {status}")
-            
-            # Rate limit before read
             self._rate_limit()
-            
-            # Find the row with matching email and session_id
             all_rows = self.activity_worksheet.get_all_values()
             
             for i, row in enumerate(all_rows):
@@ -358,7 +290,6 @@ class GSheetLogger:
                     
                     row_num = i + 1
                     
-                    # Calculate duration if not provided
                     if duration_ms == 0 and row[3]:
                         try:
                             login_dt = datetime.strptime(row[3], "%Y-%m-%d %H:%M:%S")
@@ -367,68 +298,30 @@ class GSheetLogger:
                         except Exception:
                             pass
                     
-                    # Format duration as mm:ss
                     duration_formatted = self._format_duration(duration_ms)
-                    
-                    # Batch update - single API call
                     self._rate_limit()
                     
                     update_data = [[logout_time, str(tokens_used), str(operations), duration_formatted, status]]
-                    print(f"[DEBUG] Updating row {row_num} with: {update_data}")
-                    
-                    self.activity_worksheet.update(
-                        f'E{row_num}:I{row_num}',
-                        update_data
-                    )
-                    
-                    print(f"[DEBUG] ✅ Successfully logged session end for {email}")
-                    
+                    self.activity_worksheet.update(f'E{row_num}:I{row_num}', update_data)
                     return True
             
-            # If no matching row found, create new one
-            print(f"[DEBUG] No existing session found, creating new row")
+            # No matching row found
             self._rate_limit()
-            
-            # Format duration as mm:ss
             duration_formatted = self._format_duration(duration_ms)
             
             self.activity_worksheet.append_row([
-                email,
-                session_id,
-                "",
-                "",
-                logout_time,
-                str(tokens_used),
-                str(operations),
-                duration_formatted,
-                status
+                email, session_id, "", "", logout_time,
+                str(tokens_used), str(operations), duration_formatted, status
             ])
-            
-            print(f"[DEBUG] ✅ Successfully created session end record for {email}")
-            
             return True
             
-        except Exception as e:
-            error_msg = str(e)
-            print(f"[DEBUG] ❌ Error logging session end: {error_msg}")
-            
-            if "429" in error_msg or "Quota exceeded" in error_msg:
-                if self.is_production:
-                    st.warning("⚠️ Rate limit reached. Session end will be logged later.")
-            else:
-                if self.is_production:
-                    st.error(f"❌ Failed to log session end: {e}")
+        except Exception:
             return False
     
     def update_session_metrics(self, email: str, session_id: str, 
                               tokens_used: int, operations: int) -> bool:
-        """Update session metrics during an active session - with reduced frequency"""
-        if not self.enabled:
-            return False
-        
-        # Skip frequent updates to avoid rate limits
-        # Only update every 10 operations
-        if operations % 10 != 0:
+        """Update session metrics - NO LOGGING"""
+        if not self.enabled or operations % 10 != 0:
             return True
         
         try:
@@ -438,28 +331,21 @@ class GSheetLogger:
             for i, row in enumerate(all_rows):
                 if len(row) >= 2 and row[0] == email and row[1] == session_id:
                     row_num = i + 1
-                    
-                    # Batch update
                     self._rate_limit()
                     self.activity_worksheet.update(
                         f'F{row_num}:G{row_num}',
                         [[str(tokens_used), str(operations)]]
                     )
-                    
                     return True
-            
             return False
-            
-        except Exception as e:
-            # Silently fail for metric updates to avoid spam
+        except Exception:
             return False
     
     def get_session_metrics(self, email: str, session_id: str) -> Dict[str, Any]:
-        """Get metrics for a specific session - cached"""
+        """Get metrics for session"""
         if not self.enabled:
             return {}
         
-        # This is rarely called, so rate limiting is OK
         try:
             self._rate_limit()
             all_rows = self.activity_worksheet.get_all_values()
@@ -477,37 +363,29 @@ class GSheetLogger:
                         "duration_ms": int(row[7]) if len(row) > 7 and row[7] else 0,
                         "status": row[8] if len(row) > 8 else ""
                     }
-            
             return {}
-            
-        except Exception as e:
+        except Exception:
             return {}
     
     def close_orphaned_sessions(self, email: str) -> int:
-        """Close any orphaned sessions (status='started') for a user
-        This happens when user closes browser without logging out
-        Returns: Number of sessions closed
-        """
+        """Close orphaned sessions - ONLY logs if found"""
         if not self.enabled:
             return 0
         
         try:
-            print(f"[DEBUG] Checking for orphaned sessions for {email}")
             self._rate_limit()
             all_rows = self.activity_worksheet.get_all_values()
             closed_count = 0
             current_time = self._get_timestamp()
             
             for i, row in enumerate(all_rows):
-                # Check if this is a started session for this user with no logout time
                 if (len(row) >= 9 and row[0] == email and 
                     row[8] == "started" and row[4] == ""):
                     
                     row_num = i + 1
-                    
-                    # Calculate duration from login time to now
                     duration_ms = 0
-                    if row[3]:  # If login_time exists
+                    
+                    if row[3]:
                         try:
                             login_dt = datetime.strptime(row[3], "%Y-%m-%d %H:%M:%S")
                             current_dt = datetime.strptime(current_time, "%Y-%m-%d %H:%M:%S")
@@ -515,38 +393,27 @@ class GSheetLogger:
                         except Exception:
                             pass
                     
-                    # Format duration as mm:ss
                     duration_formatted = self._format_duration(duration_ms)
-                    
-                    # Get current token/operation counts from the row
                     tokens_used = row[5] if len(row) > 5 else "0"
                     operations = row[6] if len(row) > 6 else "0"
                     
-                    print(f"[DEBUG] Closing orphaned session at row {row_num}")
-                    
-                    # Update the session as "closed"
                     self._rate_limit()
                     self.activity_worksheet.update(
                         f'E{row_num}:I{row_num}',
                         [[current_time, tokens_used, operations, duration_formatted, "closed"]]
                     )
-                    
                     closed_count += 1
             
+            # Only log if we actually closed sessions
             if closed_count > 0:
-                print(f"[DEBUG] ✅ Closed {closed_count} orphaned session(s) for {email}")
-            else:
-                print(f"[DEBUG] No orphaned sessions found for {email}")
+                logger.info(f"✅ Cleaned up {closed_count} session(s)")
             
             return closed_count
-            
-        except Exception as e:
-            print(f"[DEBUG] Error closing orphaned sessions: {e}")
-            # Silently fail - this is a cleanup operation
+        except Exception:
             return 0
     
     def get_user_sessions(self, email: str, limit: int = 10) -> list:
-        """Get recent sessions for a specific user"""
+        """Get recent sessions"""
         if not self.enabled:
             return []
         
@@ -571,16 +438,186 @@ class GSheetLogger:
                     user_sessions.append(session_data)
             
             return user_sessions[-limit:][::-1]
+        except Exception:
+            return []
+    
+    # ============================================
+    # QUOTA TRACKING METHODS
+    # ============================================
+    
+    def log_quota_update(self, email: str, session_id: str, quota_type: str, 
+                        used: int, timestamp: Optional[str] = None) -> bool:
+        """Log quota usage update to Google Sheets (with rate limit protection)"""
+        if not self.enabled:
+            return False
+        
+        try:
+            if timestamp is None:
+                timestamp = self._get_timestamp()
+            
+            # Apply rate limiting
+            self._rate_limit()
+            
+            # Try to update existing row (minimize API calls)
+            try:
+                all_rows = self.quota_worksheet.get_all_values()
+                
+                for i, row in enumerate(all_rows):
+                    if len(row) >= 2 and row[0] == email and row[1] == session_id:
+                        row_num = i + 1
+                        
+                        # Update only changed column (minimize writes)
+                        self._rate_limit()
+                        
+                        if quota_type == 'gemini_tokens':
+                            self.quota_worksheet.update(f'C{row_num}', [[str(used)]])
+                        elif quota_type == 'google_ads_ops':
+                            self.quota_worksheet.update(f'D{row_num}', [[str(used)]])
+                        
+                        return True
+            except Exception:
+                # Read failed - skip update (non-critical)
+                return False
+            
+            # No existing row - create new one
+            self._rate_limit()
+            gemini_used = used if quota_type == 'gemini_tokens' else 0
+            ads_used = used if quota_type == 'google_ads_ops' else 0
+            
+            from app.quota_system.quota_manager import QuotaManager
+            
+            self.quota_worksheet.append_row([
+                email,
+                session_id,
+                str(gemini_used),
+                str(ads_used),
+                timestamp,
+                str(QuotaManager.DEFAULT_GEMINI_TOKEN_LIMIT),
+                str(QuotaManager.DEFAULT_GOOGLE_ADS_OP_LIMIT),
+                "active"
+            ])
+            return True
             
         except Exception as e:
-            return []
+            # Silently handle rate limits (non-critical)
+            if "429" in str(e) or "Quota exceeded" in str(e):
+                pass  # Skip sync, not critical
+            return False
+    
+    def get_user_quotas(self, email: str) -> Optional[Dict[str, int]]:
+        """Get user's current quota usage from Google Sheets"""
+        if not self.enabled:
+            return None
+        
+        try:
+            self._rate_limit()
+            all_rows = self.quota_worksheet.get_all_values()
+            
+            # Find most recent row for this user
+            for row in reversed(all_rows):
+                if len(row) >= 1 and row[0] == email:
+                    return {
+                        'gemini_tokens': int(row[2]) if len(row) > 2 and row[2] else 0,
+                        'google_ads_ops': int(row[3]) if len(row) > 3 and row[3] else 0
+                    }
+            
+            return None
+        except Exception:
+            return None
+    
+    def reset_user_quotas(self, email: str) -> bool:
+        """Reset quotas for a specific user (admin only)"""
+        if not self.enabled:
+            return False
+        
+        try:
+            self._rate_limit()
+            all_rows = self.quota_worksheet.get_all_values()
+            current_time = self._get_timestamp()
+            
+            # Update all rows for this user
+            for i, row in enumerate(all_rows):
+                if len(row) >= 1 and row[0] == email:
+                    row_num = i + 1
+                    self._rate_limit()
+                    self.quota_worksheet.update(
+                        f'C{row_num}:E{row_num}',
+                        [["0", "0", current_time]]
+                    )
+            
+            return True
+        except Exception:
+            return False
+    
+    def log_gemini_usage(self, user_id: str, session_id: str, 
+                        tokens_used: int, operation_type: str) -> bool:
+        """Log individual Gemini API usage to sheets"""
+        if not self.enabled:
+            return False
+        
+        try:
+            self._rate_limit()
+            self.gemini_usage_worksheet.append_row([
+                user_id,
+                session_id,
+                operation_type,
+                str(tokens_used),
+                self._get_timestamp(),
+                "active"
+            ])
+            return True
+        except Exception as e:
+            print(f"Failed to log Gemini usage: {e}")
+            return False
+    
+    def get_user_gemini_usage(self, user_id: str, session_id: str = None) -> Dict:
+        """Get user's Gemini usage for current session or all sessions"""
+        if not self.enabled:
+            return {}
+        
+        try:
+            self._rate_limit()
+            all_rows = self.gemini_usage_worksheet.get_all_values()
+            
+            user_usage = []
+            for row in all_rows[1:]:  # Skip header
+                if len(row) >= 6 and row[0] == user_id:
+                    if session_id is None or row[1] == session_id:
+                        user_usage.append({
+                            'session_id': row[1],
+                            'operation_type': row[2],
+                            'tokens_used': int(row[3]) if row[3] else 0,
+                            'timestamp': row[4],
+                            'status': row[5]
+                        })
+            
+            # Group usage by session
+            by_session = {}
+            for usage in user_usage:
+                session_id = usage['session_id']
+                if session_id not in by_session:
+                    by_session[session_id] = {
+                        'total_tokens': 0,
+                        'operations': 0,
+                        'operations_list': []
+                    }
+                by_session[session_id]['total_tokens'] += usage['tokens_used']
+                by_session[session_id]['operations'] += 1
+                by_session[session_id]['operations_list'].append(usage)
+            
+            return {
+                'total_tokens': sum(usage['tokens_used'] for usage in user_usage),
+                'total_operations': len(user_usage),
+                'by_session': by_session
+            }
+        except Exception:
+            return {}
 
 
 class SessionTracker:
     """Tracks session metrics and operations"""
     
     def __init__(self):
-        """Initialize session tracker"""
         self.start_time = time.time()
         self.tokens_used = 0
         self.operations_count = 0
@@ -588,23 +625,18 @@ class SessionTracker:
         self.trace_id = ""
     
     def set_trace_id(self, trace_id: str):
-        """Set trace ID for the session"""
         self.trace_id = trace_id
     
     def increment_tokens(self, count: int):
-        """Increment token usage"""
         self.tokens_used += count
     
     def increment_operations(self, count: int = 1):
-        """Increment operations count"""
         self.operations_count += count
     
     def get_duration_ms(self) -> int:
-        """Get session duration in milliseconds"""
         return int((time.time() - self.start_time) * 1000)
     
     def get_session_data(self) -> Dict[str, Any]:
-        """Get current session data"""
         return {
             "session_id": self.session_id,
             "trace_id": self.trace_id,

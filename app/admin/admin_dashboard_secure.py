@@ -1,64 +1,60 @@
 """
 Admin Dashboard - User Management and Approval System
-Allows administrators to review, approve, and manage user access requests
+Secure administrative interface - NOT accessible from frontend
+
+This module is only accessible programmatically through the admin controller.
+Direct Streamlit page access has been removed for security.
 """
 
 import streamlit as st
 from utils.user_management_sheets import get_user_manager, UserManagementSheets
 from utils.email_notifications import get_email_notifier
+from utils.recaptcha import get_recaptcha_manager
 import pandas as pd
 from datetime import datetime
+from .admin_controller import require_admin, show_admin_badge, log_admin_action
 
 
-def is_admin(email: str) -> bool:
+@require_admin
+def render_admin_dashboard():
     """
-    Check if user is an administrator
-    
-    Update this function with your admin emails or implement
-    a more sophisticated admin check
+    Main admin dashboard interface
+    Protected by @require_admin decorator
     """
-    # TODO: Update this list with your admin emails
-    admin_emails = [
-        "me3tpatil@gmail.com",
-    ]
     
-    return email.lower() in [e.lower() for e in admin_emails]
-
-
-def show_admin_dashboard():
-    """Main admin dashboard interface"""
+    # Show admin badge in sidebar
+    show_admin_badge()
     
-    # Check if user is logged in
-    user = st.session_state.get("user")
-    if not user:
-        st.error("🔐 Please log in to access the admin dashboard")
-        st.info("Please return to the main page and log in with Google.")
-        return
-    
-    user_email = user.get("email", "")
-    
-    # Check if user is admin
-    if not is_admin(user_email):
-        st.error("⛔ Access Denied: Admin privileges required")
-        st.info(f"Your email: {user_email}")
-        return
+    # Get current user info
+    user_email = st.session_state.get("user_email", "")
+    user_name = st.session_state.get("user_name", "Unknown Admin")
     
     # Initialize user manager
     user_mgr = get_user_manager()
     
     if not user_mgr.enabled:
         st.error("❌ User management system is not available")
+        st.info("Check your Google Sheets configuration in .streamlit/secrets.toml")
         return
     
     # Dashboard header
     st.title("👨‍💼 Admin Dashboard")
-    st.caption(f"Logged in as: {user_email}")
+    st.caption(f"Logged in as: **{user_name}** ({user_email})")
+    
+    # Back to main app button
+    if st.button("← Back to Main App", key="back_to_main"):
+        st.session_state.show_admin_dashboard = False
+        # Don't modify page_selection - it's widget-bound
+        st.rerun()
+    
+    st.markdown("---")
     
     # Dashboard tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "⏳ Pending Approvals",
         "👥 All Users",
-        "➕ Add User Manually",
+        "📊 Activity Logs",
+        "➕ Add User",
         "⚙️ Settings"
     ])
     
@@ -69,10 +65,16 @@ def show_admin_dashboard():
         show_all_users_tab(user_mgr)
     
     with tab3:
-        show_add_user_tab(user_mgr, user_email)
+        show_activity_logs_tab(user_mgr)
     
     with tab4:
+        show_add_user_tab(user_mgr, user_email)
+    
+    with tab5:
         show_settings_tab(user_mgr)
+    
+    # Log dashboard access
+    log_admin_action("Viewed Admin Dashboard")
 
 
 def show_pending_approvals_tab(user_mgr, admin_email: str):
@@ -108,6 +110,7 @@ def show_pending_approvals_tab(user_mgr, admin_email: str):
                             success_count += 1
                     
                     st.success(f"✅ Approved {success_count} users!")
+                    log_admin_action("Bulk Approved Users", {"count": success_count})
                     st.session_state.confirm_bulk_approve = False
                     st.rerun()
                 else:
@@ -169,6 +172,12 @@ def show_user_approval_card(user_mgr, user: dict, admin_email: str, idx: int):
                 if success:
                     st.success(f"✅ Approved {user['email']}")
                     
+                    # Log the approval
+                    log_admin_action("Approved User", {
+                        "user_email": user['email'],
+                        "user_id": user['user_id']
+                    })
+                    
                     # Send approval email
                     email_notifier = get_email_notifier()
                     if email_notifier.enabled:
@@ -187,7 +196,7 @@ def show_user_approval_card(user_mgr, user: dict, admin_email: str, idx: int):
                 else:
                     st.error("❌ Failed to approve user")
             
-            # Deny section - using expander instead of popover
+            # Deny section
             with st.expander("❌ Deny with Reason"):
                 denial_reason = st.text_area(
                     "Reason for denial *",
@@ -212,11 +221,17 @@ def show_user_approval_card(user_mgr, user: dict, admin_email: str, idx: int):
                             if success:
                                 st.success(f"❌ Denied {user['email']}")
                                 
+                                # Log the denial
+                                log_admin_action("Denied User", {
+                                    "user_email": user['email'],
+                                    "user_id": user['user_id'],
+                                    "reason": denial_reason
+                                })
+                                
                                 # Send denial email
                                 email_notifier = get_email_notifier()
                                 if email_notifier.enabled:
                                     with st.spinner("Sending denial email..."):
-                                        # Check if user can reapply
                                         reapply_count = user.get('reapply_count', 0)
                                         max_reapply = int(user_mgr.get_config_value('max_reapply_count', '3'))
                                         can_reapply = reapply_count < max_reapply
@@ -249,21 +264,14 @@ def show_all_users_tab(user_mgr):
     
     st.header("👥 All Users")
     
-    # Note: This requires additional method in user_management_sheets.py
-    # For now, show a message
     st.info("""
-    **User List View - Coming Soon**
+    **User List View**
     
-    This section will display:
-    - All users with status filters
-    - Search by email/name/User ID
-    - Quick status change actions
-    - User activity history
-    
-    For now, you can view user data directly in Google Sheets.
+    View all users across all statuses.
     """)
     
     # Quick stats
+    st.subheader("📊 User Statistics")
     col1, col2, col3, col4 = st.columns(4)
     
     # These would come from actual queries
@@ -275,6 +283,26 @@ def show_all_users_tab(user_mgr):
         st.metric("Pending", "—")
     with col4:
         st.metric("Denied", "—")
+    
+    st.info("💡 **Tip:** View detailed user data directly in your Google Sheets for now. Full user management interface coming soon!")
+
+
+def show_activity_logs_tab(user_mgr):
+    """Show recent admin activity logs"""
+    
+    st.header("📊 Activity Logs")
+    
+    st.info("""
+    **Admin Activity Tracking**
+    
+    View recent administrative actions:
+    - User approvals/denials
+    - Status changes
+    - Configuration updates
+    - System access logs
+    """)
+    
+    st.info("💡 **Coming Soon:** Full activity log viewer with filtering and export capabilities.")
 
 
 def show_add_user_tab(user_mgr, admin_email: str):
@@ -339,6 +367,12 @@ def show_add_user_tab(user_mgr, admin_email: str):
                             notes=notes
                         )
                     
+                    # Log the action
+                    log_admin_action("Manually Added User", {
+                        "user_email": email.strip().lower(),
+                        "user_id": user_id
+                    })
+                    
                     st.success(f"""
                     ✅ **User added successfully!**
                     
@@ -400,7 +434,6 @@ def show_settings_tab(user_mgr):
     st.divider()
     
     # reCAPTCHA Configuration Status
-    from utils.recaptcha import get_recaptcha_manager
     recaptcha_mgr = get_recaptcha_manager()
     
     st.subheader("🤖 reCAPTCHA Bot Protection")
@@ -430,13 +463,6 @@ def show_settings_tab(user_mgr):
     # System Configuration
     st.subheader("⚙️ System Configuration")
     
-    st.info("""
-    **Configuration Settings**
-    
-    These settings are stored in the Admin Config worksheet
-    in your Google Sheets. Changes here will update the sheet.
-    """)
-    
     # Get current settings
     auto_approve = user_mgr.get_config_value("auto_approve_enabled", "false")
     max_reapply = user_mgr.get_config_value("max_reapply_count", "3")
@@ -455,16 +481,13 @@ def show_settings_tab(user_mgr):
     
     st.divider()
     
-    st.subheader("Update Settings")
-    
-    st.warning("""
-    ⚠️ **Note:** To update these settings, you need to:
+    st.info("""
+    💡 **Tip:** To update these settings:
     1. Open your Google Sheets
     2. Go to the "Admin Config" tab
     3. Modify the "Value" column for the setting you want to change
-    4. Changes take effect immediately
     
-    **Future Enhancement:** Settings editor will be added here.
+    Changes take effect immediately.
     """)
     
     # Direct link to Google Sheets
@@ -472,50 +495,3 @@ def show_settings_tab(user_mgr):
     if sheet_id:
         sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid=0"
         st.link_button("📊 Open Google Sheets", sheet_url, type="primary")
-
-
-def show_admin_stats(user_mgr):
-    """Show admin dashboard statistics"""
-    
-    st.subheader("📊 Quick Stats")
-    
-    # Get pending count
-    pending = user_mgr.get_pending_users()
-    pending_count = len(pending)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Pending Approvals", pending_count)
-    
-    with col2:
-        st.metric("Today's Signups", "—")  # Would need date filtering
-    
-    with col3:
-        st.metric("Active Users", "—")  # Would need status filtering
-    
-    with col4:
-        st.metric("Total Users", "—")  # Would need count query
-
-
-# Main function
-def main():
-    """Main function for admin dashboard"""
-    
-    # Set page config
-    st.set_page_config(
-        page_title="Admin Dashboard",
-        page_icon="👨‍💼",
-        layout="wide"
-    )
-    
-    # Show dashboard
-    show_admin_dashboard()
-    
-    # Footer
-    st.divider()
-    st.caption("🎓 Google Ads Simulator - Admin Dashboard")
-
-
-if __name__ == "__main__":
-    main()

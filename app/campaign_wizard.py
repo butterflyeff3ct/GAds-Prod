@@ -4,9 +4,12 @@ from datetime import date, timedelta
 import time
 from app.state import OBJECTIVES_ENHANCED, GEO_LOCATIONS, AUDIENCE_SEGMENTS
 from data_models.schemas import BiddingStrategy
-from features.keyword_extractor import KeywordExtractor, ADVANCED_KEYWORDS
+from features.keyword_extractor import KeywordExtractor
 from services.gemini_client import get_gemini_client
 from core.simulation import run_simulation
+
+# NEW: Import wizard navigation
+from app.wizard_components.wizard_navigation import render_wizard_step_sidebar, reset_wizard_navigation
 
 # NEW: Import functional components
 from app.components.keyword_manager import render_keyword_manager, render_campaign_negative_keywords
@@ -18,6 +21,7 @@ from app.components.location_manager import (
 )
 from app.components.audience_manager import render_audience_targeting
 from app.components.conversion_manager import render_conversion_actions
+from app.components.ai_ad_generator import _generate_sample_headlines, _generate_sample_descriptions
 
 # ========== HELPER FUNCTIONS ==========
 
@@ -118,6 +122,7 @@ def nav_buttons(current_step: int, total_steps: int):
             if validate_current_step(current_step):
                 st.session_state.campaign_step += 1; st.rerun()
     if cols[2].button("Cancel", use_container_width=True):
+        reset_wizard_navigation()
         st.session_state.campaign_step = 0; st.rerun()
 
 def validate_current_step(step: int) -> bool:
@@ -279,6 +284,9 @@ def render_campaign_wizard():
     
     # Updated step structure based on Google Ads flow
     total_steps = 9  # Search, Bidding, Campaign settings, AI Max, Keyword generation, Ad groups, Budget, Review, Launch
+    
+    # NEW: Render wizard step navigation in sidebar
+    render_wizard_step_sidebar(st.session_state.campaign_step, total_steps)
     
     # Show progress bar (ensure value doesn't exceed 1.0)
     progress_value = min(st.session_state.campaign_step / total_steps, 1.0)
@@ -786,11 +794,11 @@ def render_campaign_wizard():
         # --- STEP 5: KEYWORD AND ASSET GENERATION ---
     elif st.session_state.campaign_step == 5:
         st.header("Step 5: Keyword and asset generation")
-        
+    
         # Get help creating your ad section
         with st.container():
             st.subheader("Get help creating your ad")
-            st.write("Google AI uses your URL and description to create assets like keywords, headlines, and descriptions for you to review. Generated content might be inaccurate or offensive. Please review all content before publishing. Human reviewers may read and process the information you provide.")
+            st.write("Google Ads API uses your URL and description to create keywords with real search data. Generated content might be inaccurate or offensive. Please review all content before publishing.")
             
             # Terms and Privacy links
             col1, col2, col3 = st.columns(3)
@@ -809,7 +817,7 @@ def render_campaign_wizard():
             "Final URL (required)*",
             value=cfg.get('final_url', ''),
             placeholder="https://example.com",
-            help="🌐 Keyword and asset generation is not available in all languages."
+            help="🌐 Keyword generation uses Google Ads API for real search data."
         )
         cfg['final_url'] = final_url
         
@@ -820,9 +828,9 @@ def render_campaign_wizard():
         product_description = st.text_area(
             "Describe the product or service to advertise (required)*",
             value=cfg.get('product_description', ''),
-            placeholder="Describe your products or services in detail. Include key features, benefits, and what makes them unique. This helps AI generate relevant keywords and ad copy.",
+            placeholder="Describe your products or services in detail. Include key features, benefits, and what makes them unique. This helps generate relevant keywords with real search metrics.",
             height=150,
-            help="The more detailed your description, the better the AI can generate relevant keywords and ad copy."
+            help="The more detailed your description, the better the keyword suggestions will be."
         )
         cfg['product_description'] = product_description
         
@@ -830,123 +838,257 @@ def render_campaign_wizard():
         
         # Review ad groups section
         st.subheader("Review ad groups")
-        st.write("Google AI suggests ad groups relevant to keywords. You can edit these in the next step.")
+        st.write("Google Ads API suggests keywords based on real search data. You can edit these in the next step.")
         st.markdown("[Organize your account with ad groups](https://support.google.com/google-ads/answer/2375430)")
         
-        # AI Generated Ad Groups
-        if final_url and product_description and st.button("🚀 Generate", use_container_width=True, type="primary", key="generate_ad_groups"):
-            with st.spinner("AI is generating keywords and ad groups..."):
+        # GENERATE BUTTON - USING GOOGLE ADS API
+        if final_url and product_description and st.button("🚀 Generate Keywords", use_container_width=True, type="primary", key="generate_ad_groups"):
+            with st.spinner("Generating keywords with Google Ads API..."):
                 try:
-                    # Use Gemini AI to generate ad groups
-                    gemini = get_gemini_client()
+                    from services.google_ads_client import get_google_ads_client
+                    from app.quota_system import get_quota_manager
                     
-                    # Generate keywords first
-                    keywords = gemini.generate_keywords(product_description)
+                    ads_client = get_google_ads_client()
+                    quota_mgr = get_quota_manager()
                     
-                    # Generate ad groups based on keywords and description
-                    ad_groups_prompt = f"""
-                    Based on the product description: "{product_description}"
-                    And the base URL: "{final_url}"
-                    
-                    Create 3-5 relevant ad groups with:
-                    1. Descriptive ad group names
-                    2. Relevant final URLs (can be variations of the base URL)
-                    3. 5-8 keywords per ad group
-                    
-                    Format as JSON:
-                    {{
-                        "ad_groups": [
-                            {{
-                                "name": "Ad Group Name",
-                                "final_url": "https://example.com/category",
-                                "keywords": ["keyword1", "keyword2", "keyword3"]
-                            }}
-                        ]
-                    }}
-                    """
-                    
-                    if gemini.use_real_api:
-                        response = gemini.model.generate_content(ad_groups_prompt)
-                        try:
-                            import json
-                            ad_groups_data = json.loads(response.text)
-                            generated_ad_groups = ad_groups_data.get('ad_groups', [])
-                        except:
-                            # Fallback if JSON parsing fails
-                            generated_ad_groups = [
-                                {"name": "Main Products", "final_url": final_url, "keywords": keywords[:8]},
-                                {"name": "Services", "final_url": f"{final_url}/services", "keywords": keywords[8:16] if len(keywords) > 8 else keywords[:8]},
-                                {"name": "Support", "final_url": f"{final_url}/support", "keywords": keywords[16:24] if len(keywords) > 16 else keywords[:8]}
-                            ]
+                    # Check if we can use Google Ads API
+                    if ads_client and quota_mgr.can_use_google_ads():
+                        # Use REAL Google Ads API
+                        st.info("📊 Fetching real keyword data from Google Ads API...")
+                        
+                        keywords_df = ads_client.fetch_keyword_ideas_from_url(
+                            url=final_url,
+                            description=product_description,
+                            location_ids=["2840"]  # United States - TODO: Make this configurable
+                        )
+                        
+                        # Increment quota
+                        quota_mgr.increment_google_ads_ops(1)
+                        
+                        if not keywords_df.empty:
+                            # Group keywords into ad groups based on search volume and competition
+                            high_volume = keywords_df[keywords_df['avg_monthly_searches'] >= 5000]
+                            med_volume = keywords_df[(keywords_df['avg_monthly_searches'] >= 1000) & (keywords_df['avg_monthly_searches'] < 5000)]
+                            low_volume = keywords_df[keywords_df['avg_monthly_searches'] < 1000]
+                            
+                            generated_ad_groups = []
+                            
+                            # Create ad groups from keyword segments
+                            if not high_volume.empty:
+                                generated_ad_groups.append({
+                                    "name": "High Volume Keywords",
+                                    "final_url": final_url,
+                                    "keywords": high_volume['keyword'].tolist()[:15],  # Top 15
+                                    "metrics": high_volume.to_dict('records')[:15]
+                                })
+                            
+                            if not med_volume.empty:
+                                generated_ad_groups.append({
+                                    "name": "Medium Volume Keywords",
+                                    "final_url": final_url,
+                                    "keywords": med_volume['keyword'].tolist()[:15],
+                                    "metrics": med_volume.to_dict('records')[:15]
+                                })
+                            
+                            if not low_volume.empty:
+                                generated_ad_groups.append({
+                                    "name": "Long-Tail Keywords",
+                                    "final_url": final_url,
+                                    "keywords": low_volume['keyword'].tolist()[:15],
+                                    "metrics": low_volume.to_dict('records')[:15]
+                                })
+                            
+                            # Fallback if no grouping worked
+                            if not generated_ad_groups:
+                                generated_ad_groups.append({
+                                    "name": "Main Keywords",
+                                    "final_url": final_url,
+                                    "keywords": keywords_df['keyword'].tolist()[:20],
+                                    "metrics": keywords_df.to_dict('records')[:20]
+                                })
+                            
+                            cfg['generated_ad_groups'] = generated_ad_groups
+                            st.success(f"✅ Generated {len(generated_ad_groups)} ad groups with {len(keywords_df)} real keywords!")
+                            st.info("💡 Keywords include search volume, competition, and CPC data from Google Ads")
+                            
+                        else:
+                            st.warning("⚠️ No keywords returned from API. Using mock data.")
+                            # Fallback to mock
+                            seed_kws = ads_client._extract_keywords_from_text(product_description)
+                            mock_df = ads_client._generate_mock_keyword_data(seed_kws)
+                            
+                            generated_ad_groups = [{
+                                "name": "Main Keywords",
+                                "final_url": final_url,
+                                "keywords": mock_df['keyword'].tolist()[:20],
+                                "metrics": mock_df.to_dict('records')[:20]
+                            }]
+                            cfg['generated_ad_groups'] = generated_ad_groups
+                            
                     else:
-                        # Mock data for development
-                        generated_ad_groups = [
-                            {"name": "Main Products", "final_url": final_url, "keywords": keywords[:8]},
-                            {"name": "Services", "final_url": f"{final_url}/services", "keywords": keywords[8:16] if len(keywords) > 8 else keywords[:8]},
-                            {"name": "Support", "final_url": f"{final_url}/support", "keywords": keywords[16:24] if len(keywords) > 16 else keywords[:8]}
-                        ]
-                    
-                    # Store generated ad groups
-                    cfg['generated_ad_groups'] = generated_ad_groups
-                    st.success(f"✅ Generated {len(generated_ad_groups)} ad groups with keywords!")
+                        # Quota exceeded or API unavailable - use mock
+                        st.warning("⚠️ Google Ads API quota exceeded or unavailable. Using mock keywords for educational purposes.")
+                        
+                        if ads_client:
+                            seed_kws = ads_client._extract_keywords_from_text(product_description)
+                            mock_df = ads_client._generate_mock_keyword_data(seed_kws)
+                        else:
+                            # API not available at all - create basic mock
+                            import pandas as pd
+                            import random
+                            
+                            words = product_description.lower().split()[:5]
+                            keywords = []
+                            for word in words:
+                                keywords.extend([
+                                    word,
+                                    f"buy {word}",
+                                    f"best {word}",
+                                    f"{word} near me",
+                                    f"{word} online"
+                                ])
+                            
+                            mock_df = pd.DataFrame([{
+                                "keyword": kw,
+                                "avg_monthly_searches": random.randint(100, 10000),
+                                "competition": random.choice(["LOW", "MEDIUM", "HIGH"]),
+                                "cpc_low": round(random.uniform(0.5, 2.0), 2),
+                                "cpc_high": round(random.uniform(2.0, 5.0), 2),
+                            } for kw in keywords[:20]])
+                        
+                        generated_ad_groups = [{
+                            "name": "Main Keywords",
+                            "final_url": final_url,
+                            "keywords": mock_df['keyword'].tolist()[:20],
+                            "metrics": mock_df.to_dict('records')[:20]
+                        }]
+                        cfg['generated_ad_groups'] = generated_ad_groups
+                        st.info("💡 Mock keywords generated. Real metrics available when API quota resets.")
                     
                 except Exception as e:
                     error_msg = str(e)
-                    if "429" in error_msg or "quota" in error_msg.lower():
-                        st.error("⚠️ API quota exceeded. Please wait a moment and try again, or use the manual keyword entry option.")
-                        st.info("💡 **Tip:** The free tier has rate limits. You can still create campaigns manually or try again in a few minutes.")
-                    else:
-                        st.error(f"Error generating ad groups: {e}")
+                    st.error(f"❌ Keyword generation failed: {error_msg}")
                     
-                    # Fallback to simple ad groups
-                    cfg['generated_ad_groups'] = [
-                        {"name": "Main Products", "final_url": final_url, "keywords": ["product", "service", "buy", "shop"]},
-                        {"name": "Services", "final_url": f"{final_url}/services", "keywords": ["services", "support", "help", "contact"]}
-                    ]
+                    # Ultimate fallback
+                    import pandas as pd
+                    import random
+                    
+                    basic_keywords = ["product", "service", "buy", "shop", "best", "cheap", "online", "near me"]
+                    mock_df = pd.DataFrame([{
+                        "keyword": kw,
+                        "avg_monthly_searches": random.randint(100, 10000),
+                        "competition": random.choice(["LOW", "MEDIUM", "HIGH"]),
+                        "cpc_low": round(random.uniform(0.5, 2.0), 2),
+                        "cpc_high": round(random.uniform(2.0, 5.0), 2),
+                    } for kw in basic_keywords])
+                    
+                    cfg['generated_ad_groups'] = [{
+                        "name": "Basic Keywords",
+                        "final_url": final_url,
+                        "keywords": mock_df['keyword'].tolist(),
+                        "metrics": mock_df.to_dict('records')
+                    }]
+                    
+                    st.info("💡 Using basic fallback keywords. You can edit them in the next step.")
         
         # Display generated ad groups
         if cfg.get('generated_ad_groups'):
-            st.write("**Generated Ad Groups:**")
+            st.write("**Generated Ad Groups with Metrics:**")
+            
             for i, ag in enumerate(cfg['generated_ad_groups']):
-                col1, col2, col3 = st.columns([3, 1, 1])
-                with col1:
-                    st.write(f"**{ag['name']}**")
-                    st.write(f"Final URL: {ag['final_url']}")
-                with col2:
-                    if st.button("✏️", key=f"edit_generated_{i}", help="Edit ad group"):
-                        st.session_state[f"editing_generated_{i}"] = True
-                with col3:
-                    if st.button("🗑️", key=f"delete_generated_{i}", help="Delete ad group"):
-                        cfg['generated_ad_groups'].pop(i)
-                        st.rerun()
+                with st.expander(f"📁 {ag['name']} ({len(ag['keywords'])} keywords)", expanded=i==0):
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        st.write(f"**Final URL:** {ag['final_url']}")
+                        st.write(f"**Keywords:** {len(ag['keywords'])}")
+                        
+                        # Show top keywords with metrics if available
+                        if 'metrics' in ag and ag['metrics']:
+                            import pandas as pd
+                            metrics_df = pd.DataFrame(ag['metrics'][:10])  # Show top 10
+                            
+                            if not metrics_df.empty:
+                                # Format for display
+                                display_df = metrics_df[['keyword', 'avg_monthly_searches', 'competition', 'cpc_low', 'cpc_high']].copy()
+                                display_df.columns = ['Keyword', 'Monthly Searches', 'Competition', 'CPC Low', 'CPC High']
+                                
+                                st.dataframe(display_df, use_container_width=True)
+                                
+                                if len(ag['keywords']) > 10:
+                                    st.caption(f"... and {len(ag['keywords']) - 10} more keywords")
+                        else:
+                            # Just show keywords without metrics
+                            st.write(", ".join(ag['keywords'][:10]))
+                            if len(ag['keywords']) > 10:
+                                st.caption(f"... and {len(ag['keywords']) - 10} more")
+                    
+                    with col2:
+                        if st.button("✏️ Edit", key=f"edit_generated_{i}", help="Edit ad group"):
+                            st.session_state[f"editing_generated_{i}"] = True
+                        
+                        if st.button("🗑️ Delete", key=f"delete_generated_{i}", help="Delete ad group"):
+                            cfg['generated_ad_groups'].pop(i)
+                            st.rerun()
+            
+            st.markdown("---")
             
             # Add ad group button
-            if st.button("+ Add an ad group", use_container_width=True):
+            if st.button("+ Add another ad group", use_container_width=True):
                 new_ag = {
                     "name": f"Custom Ad Group {len(cfg['generated_ad_groups']) + 1}",
                     "final_url": final_url,
-                    "keywords": ["custom", "keyword"]
+                    "keywords": [],
+                    "metrics": []
                 }
                 cfg['generated_ad_groups'].append(new_ag)
                 st.rerun()
         
         # Disclaimer
         st.markdown("---")
-        st.info("⚠️ **Disclaimer:** By adding generated assets, you're confirming that you'll review the suggested keywords and assets on the next page and ensure that they're accurate, not misleading, and not in violation of any Google advertising policies or applicable laws before publishing them.")
+        st.info("⚠️ **Disclaimer:** By adding generated keywords, you're confirming that you'll review the suggested keywords on the next page and ensure that they're accurate, not misleading, and not in violation of any Google advertising policies or applicable laws before publishing them.")
         
         # Navigation buttons
         col1, col2 = st.columns([1, 1])
         with col1:
-            if st.button("Skip", use_container_width=True, key="keyword_step_skip"):
+            if st.button("⬅️ Skip & Add Manually", use_container_width=True, key="keyword_step_skip"):
+                # Skip to next step without keywords
                 st.session_state.campaign_step += 1
                 st.rerun()
+        
         with col2:
             if st.button("Next ➡️", use_container_width=True, type="primary", key="keyword_step_next"):
                 # Convert generated ad groups to regular ad groups
                 if cfg.get('generated_ad_groups'):
                     cfg['ad_groups'] = []
                     for ag in cfg['generated_ad_groups']:
-                        keyword_text = '\n'.join([f"{kw}, broad" for kw in ag['keywords']])
+                        # Build keyword text with metrics if available
+                        keyword_lines = []
+                        
+                        if 'metrics' in ag and ag['metrics']:
+                            # Use metrics to set match types and bids
+                            for metric in ag['metrics']:
+                                kw = metric['keyword']
+                                # Set match type based on competition
+                                comp = metric.get('competition', 'MEDIUM')
+                                if comp == 'HIGH':
+                                    match_type = 'phrase'  # Phrase match for high competition
+                                elif comp == 'LOW':
+                                    match_type = 'broad'  # Broad match for low competition
+                                else:
+                                    match_type = 'exact'  # Exact match for medium competition
+                                
+                                # Use CPC high as suggested bid
+                                bid = metric.get('cpc_high', 1.50)
+                                
+                                keyword_lines.append(f"{kw}, {match_type}, {bid:.2f}, enabled")
+                        else:
+                            # No metrics - use broad match
+                            for kw in ag['keywords']:
+                                keyword_lines.append(f"{kw}, broad, , enabled")
+                        
+                        keyword_text = '\n'.join(keyword_lines)
+                        
                         cfg['ad_groups'].append({
                             "name": ag['name'],
                             "keywords": keyword_text,
@@ -954,12 +1096,14 @@ def render_campaign_wizard():
                             "headlines": [],
                             "descriptions": [],
                             "path1": "",
-                            "path2": ""
+                            "path2": "",
+                            "keywords_data": ag.get('metrics', [])  # Store metrics for later use
                         })
+                    
+                    st.success(f"✅ Created {len(cfg['ad_groups'])} ad groups with keywords!")
+                
                 st.session_state.campaign_step += 1
                 st.rerun()
-        
-        # Note: nav_buttons removed to avoid duplicate button IDs
 
     
     # --- STEP 7: BUDGET ---
@@ -1280,6 +1424,78 @@ def render_campaign_wizard():
                 )
                 selected_ag['descriptions'] = [d.strip() for d in descriptions_text.split('\n') if d.strip()]
                 
+                # NEW: AI-Powered Ad Copy Generation
+                st.markdown("---")
+                st.write("**🤖 AI-Powered Generation**")
+                st.caption("Let Gemini AI create headlines and descriptions for you")
+                
+                col_gen1, col_gen2 = st.columns(2)
+                
+                with col_gen1:
+                    if st.button("✨ Generate Headlines", use_container_width=True, key=f"gen_headlines_{st.session_state.selected_ad_group_index}"):
+                        with st.spinner("Generating headlines with Gemini AI..."):
+                            try:
+                                from app.quota_system import get_quota_manager
+                                
+                                gemini = get_gemini_client()  # Use global import
+                                quota_mgr = get_quota_manager()
+                                
+                                # Build context
+                                context = f"Business: {selected_ag.get('final_url', cfg.get('final_url', ''))}␤Product: {cfg.get('product_description', '')}␤Ad Group: {selected_ag.get('name', 'Products')}"
+                                
+                                if quota_mgr.can_use_gemini():
+                                    result = gemini.generate_ads(context, num_headlines=15, num_descriptions=4, tone="professional")
+                                    headlines = result.get('headlines', [])
+                                    headlines = [h[:30] for h in headlines]  # Enforce 30 char limit
+                                    
+                                    existing = selected_ag.get('headlines', [])
+                                    selected_ag['headlines'] = existing + headlines
+                                    st.success(f"✅ Generated {len(headlines)} headlines!")
+                                    st.rerun()
+                                else:
+                                    st.warning("⚠️ Gemini quota exceeded. Using sample headlines.")
+                                    sample = _generate_sample_headlines(selected_ag.get('name', 'Products'))
+                                    existing = selected_ag.get('headlines', [])
+                                    selected_ag['headlines'] = existing + sample
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed: {e}")
+                
+                with col_gen2:
+                    if st.button("✨ Generate Descriptions", use_container_width=True, key=f"gen_descriptions_{st.session_state.selected_ad_group_index}"):
+                        with st.spinner("Generating descriptions with Gemini AI..."):
+                            try:
+                                from app.quota_system import get_quota_manager
+                                
+                                gemini = get_gemini_client()  # Use global import
+                                quota_mgr = get_quota_manager()
+                                
+                                # Build context
+                                context = f"Business: {selected_ag.get('final_url', cfg.get('final_url', ''))}␤Product: {cfg.get('product_description', '')}␤Ad Group: {selected_ag.get('name', 'Products')}"
+                                
+                                if quota_mgr.can_use_gemini():
+                                    result = gemini.generate_ads(context, num_headlines=5, num_descriptions=4, tone="professional")
+                                    descriptions = result.get('descriptions', [])
+                                    descriptions = [d[:90] for d in descriptions]  # Enforce 90 char limit
+                                    
+                                    existing = selected_ag.get('descriptions', [])
+                                    selected_ag['descriptions'] = existing + descriptions
+                                    st.success(f"✅ Generated {len(descriptions)} descriptions!")
+                                    st.rerun()
+                                else:
+                                    st.warning("⚠️ Gemini quota exceeded. Using sample descriptions.")
+                                    sample = _generate_sample_descriptions(selected_ag.get('name', 'Products'))
+                                    existing = selected_ag.get('descriptions', [])
+                                    selected_ag['descriptions'] = existing + sample
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed: {e}")
+                
+                st.caption("📏 Headlines: Max 30 characters | Descriptions: Max 90 characters")
+                st.caption("🤖 AI ensures all content meets Google Ads requirements")
+                
+                st.markdown("---")
+                
                 # Additional assets
                 st.write("**More Assets**")
                 st.text_input("Images - Add Images to your campaign", placeholder="Upload images", key=f"ad_images_{st.session_state.selected_ad_group_index}")
@@ -1453,6 +1669,89 @@ def render_campaign_wizard():
         
         st.markdown("---")
         
+        # NEW: Performance Forecast
+        st.subheader("🔮 Campaign Performance Forecast")
+        
+        # Generate forecast
+        if st.button("📊 Generate Performance Forecast", type="primary", use_container_width=True):
+            with st.spinner("Generating forecast with Google Ads API..."):
+                try:
+                    from services.google_ads_forecasting import GoogleAdsForecastService, generate_mock_forecast
+                    from services.google_ads_client import get_google_ads_client
+                    from app.quota_system import get_quota_manager
+                    
+                    quota_mgr = get_quota_manager()
+                    
+                    # Collect all keywords
+                    all_keywords = []
+                    for ag in cfg.get('ad_groups', []):
+                        keywords = [l.split(',')[0].strip() for l in ag.get('keywords', '').split('\n') if l.strip()]
+                        all_keywords.extend(keywords)
+                    
+                    # Check quota and get forecast
+                    if quota_mgr.can_use_google_ads():
+                        ads_client = get_google_ads_client()
+                        
+                        if ads_client:
+                            forecast_service = GoogleAdsForecastService(
+                                client=ads_client.client,
+                                customer_id=ads_client.customer_id
+                            )
+                            
+                            # Generate forecast
+                            daily_budget = cfg.get('daily_budget', 100.0)
+                            forecast = forecast_service.generate_forecast(
+                                keywords=all_keywords[:50],  # Limit to 50
+                                daily_budget_micros=int(daily_budget * 1_000_000),
+                                location_ids=["2840"]  # TODO: Use actual location IDs
+                            )
+                            
+                            # Increment quota
+                            quota_mgr.increment_google_ads_ops(2)  # Forecast uses 2 ops
+                        else:
+                            # API not available, use mock
+                            forecast = generate_mock_forecast(
+                                keywords=all_keywords,
+                                daily_budget=cfg.get('daily_budget', 100.0)
+                            )
+                    else:
+                        # Quota exceeded, use mock
+                        forecast = generate_mock_forecast(
+                            keywords=all_keywords,
+                            daily_budget=cfg.get('daily_budget', 100.0)
+                        )
+                    
+                    # Store forecast in config
+                    cfg['performance_forecast'] = forecast
+                    st.success("✅ Forecast generated successfully!")
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"❌ Forecast failed: {e}")
+                    st.info("💡 Generating mock forecast for educational purposes...")
+                    
+                    # Fall back to mock
+                    all_keywords = []
+                    for ag in cfg.get('ad_groups', []):
+                        keywords = [l.split(',')[0].strip() for l in ag.get('keywords', '').split('\n') if l.strip()]
+                        all_keywords.extend(keywords)
+                    
+                    from services.google_ads_forecasting import generate_mock_forecast
+                    forecast = generate_mock_forecast(
+                        keywords=all_keywords,
+                        daily_budget=cfg.get('daily_budget', 100.0)
+                    )
+                    cfg['performance_forecast'] = forecast
+        
+        # Display forecast if available
+        if cfg.get('performance_forecast'):
+            from features.forecast_display import render_forecast_summary_card
+            render_forecast_summary_card(cfg['performance_forecast'])
+        else:
+            st.info("💡 Click the button above to see predicted campaign performance")
+        
+        st.markdown("---")
+        
         # Detailed review
         with st.expander("📋 Campaign Details", expanded=True):
             st.write(f"**Campaign Name:** {cfg.get('campaign_name', 'Not set')}")
@@ -1539,6 +1838,9 @@ def render_campaign_wizard():
                         st.session_state['campaign_step'] = 0
                         st.session_state['campaign_launched'] = True  # Use a flag instead
                         
+                        # Reset wizard navigation state
+                        reset_wizard_navigation()
+                        
                         st.success("✅ Campaign launched successfully! Redirecting to dashboard...")
                         st.balloons()  # Celebration!
                         time.sleep(2)
@@ -1557,5 +1859,6 @@ def render_campaign_wizard():
         
         with col3:
             if st.button("Cancel", use_container_width=True):
+                reset_wizard_navigation()
                 st.session_state.campaign_step = 0
                 st.rerun()

@@ -29,7 +29,11 @@ from zoneinfo import ZoneInfo
 from typing import Optional, Dict, Any, List
 import time
 import random
+import logging
 from oauth2client.service_account import ServiceAccountCredentials
+
+# Get logger for Google Sheets API
+logger = logging.getLogger('google_sheets_api')
 
 
 class UserManagementSheets:
@@ -87,10 +91,10 @@ class UserManagementSheets:
             self._init_worksheets()
             self.enabled = True
             
-            print("[DEBUG] UserManagementSheets initialized successfully")
+            logger.info("✅ User Management Sheets initialized successfully")
             
         except Exception as e:
-            print(f"[ERROR] UserManagementSheets initialization failed: {e}")
+            logger.error(f"❌ UserManagementSheets initialization failed: {e}")
             if show_warnings:
                 st.error(f"❌ Failed to initialize user management: {e}")
             self.enabled = False
@@ -120,12 +124,12 @@ class UserManagementSheets:
         """Initialize or migrate worksheets with new schema"""
         try:
             self.sheet = self.client.open_by_key(self.sheet_id)
-            print(f"[DEBUG] Successfully opened Google Sheet: {self.sheet_id}")
+            logger.debug(f"Opened Google Sheet: {self.sheet_id}")
             
             # Initialize Users worksheet with enhanced schema
             try:
                 self.users_worksheet = self.sheet.worksheet("Users")
-                print("[DEBUG] Found existing Users worksheet")
+                logger.debug("Found existing Users worksheet")
                 # TODO: Add migration logic if needed
             except gspread.WorksheetNotFound:
                 self._rate_limit()
@@ -139,12 +143,12 @@ class UserManagementSheets:
                     "Reapply Count", "Added By", "Notes", "Profile Pic", "Locale"
                 ]
                 self.users_worksheet.append_row(headers)
-                print("[DEBUG] Created new Users worksheet with enhanced schema")
+                logger.debug("Created new Users worksheet with enhanced schema")
             
             # Initialize Activity worksheet with enhanced schema
             try:
                 self.activity_worksheet = self.sheet.worksheet("Activity")
-                print("[DEBUG] Found existing Activity worksheet")
+                logger.debug("Found existing Activity worksheet")
             except gspread.WorksheetNotFound:
                 self._rate_limit()
                 self.activity_worksheet = self.sheet.add_worksheet(
@@ -157,12 +161,12 @@ class UserManagementSheets:
                     "IP Address", "User Agent", "Last Activity", "Idle Timeout"
                 ]
                 self.activity_worksheet.append_row(headers)
-                print("[DEBUG] Created new Activity worksheet with enhanced schema")
+                logger.debug("Created new Activity worksheet with enhanced schema")
             
             # Initialize Admin Config worksheet
             try:
                 self.config_worksheet = self.sheet.worksheet("Admin Config")
-                print("[DEBUG] Found existing Admin Config worksheet")
+                logger.debug("Found existing Admin Config worksheet")
             except gspread.WorksheetNotFound:
                 self._rate_limit()
                 self.config_worksheet = self.sheet.add_worksheet(
@@ -182,10 +186,10 @@ class UserManagementSheets:
                     self._rate_limit()
                     self.config_worksheet.append_row(config)
                 
-                print("[DEBUG] Created new Admin Config worksheet")
+                logger.debug("Created new Admin Config worksheet")
                 
         except Exception as e:
-            print(f"[ERROR] Failed to initialize worksheets: {e}")
+            logger.error(f"Failed to initialize worksheets: {e}")
             raise
     
     def _generate_user_id(self) -> str:
@@ -253,7 +257,7 @@ class UserManagementSheets:
             
             self.users_worksheet.append_row(row_data)
             
-            print(f"[DEBUG] ✅ Added user {email} with ID {user_id}, status: {status}")
+            logger.info(f"✅ Added user {email} with ID {user_id}, status: {status}")
             
             return {
                 "success": True,
@@ -264,7 +268,7 @@ class UserManagementSheets:
             }
             
         except Exception as e:
-            print(f"[ERROR] Failed to add user signup: {e}")
+            logger.error(f"❌ Failed to add user signup: {e}")
             return {"success": False, "error": str(e)}
     
     def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
@@ -298,7 +302,7 @@ class UserManagementSheets:
             return None
             
         except Exception as e:
-            print(f"[ERROR] Failed to get user by email: {e}")
+            logger.error(f"❌ Failed to get user by email: {e}")
             return None
     
     def update_user_status(self, email: str, new_status: str, 
@@ -352,14 +356,14 @@ class UserManagementSheets:
                         self.users_worksheet.update(f'{col}{row_num}', [[value]])
                         time.sleep(0.5)  # Small delay between updates
                     
-                    print(f"[DEBUG] ✅ Updated user {email} status to {new_status}")
+                    logger.info(f"✅ Updated user {email} status to {new_status}")
                     return True
             
-            print(f"[WARNING] User {email} not found")
+            logger.warning(f"⚠️ User {email} not found")
             return False
             
         except Exception as e:
-            print(f"[ERROR] Failed to update user status: {e}")
+            logger.error(f"❌ Failed to update user status: {e}")
             return False
     
     def get_pending_users(self) -> List[Dict[str, Any]]:
@@ -385,7 +389,7 @@ class UserManagementSheets:
             return pending_users
             
         except Exception as e:
-            print(f"[ERROR] Failed to get pending users: {e}")
+            logger.error(f"❌ Failed to get pending users: {e}")
             return []
     
     def update_user_login(self, email: str, is_first_login: bool = False) -> bool:
@@ -416,13 +420,13 @@ class UserManagementSheets:
                             self._rate_limit()
                             self.users_worksheet.update(f'D{row_num}', [[self.STATUS_ACTIVE]])
                     
-                    print(f"[DEBUG] ✅ Updated login timestamp for {email}")
+                    logger.info(f"✅ Updated login timestamp for {email}")
                     return True
             
             return False
             
         except Exception as e:
-            print(f"[ERROR] Failed to update user login: {e}")
+            logger.error(f"❌ Failed to update user login: {e}")
             return False
     
     def get_config_value(self, setting: str, default: str = "") -> str:
@@ -441,7 +445,7 @@ class UserManagementSheets:
             return default
             
         except Exception as e:
-            print(f"[ERROR] Failed to get config value: {e}")
+            logger.error(f"❌ Failed to get config value: {e}")
             return default
 
 
